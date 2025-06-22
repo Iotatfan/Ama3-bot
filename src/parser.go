@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/spf13/viper"
 )
 
 type Post struct {
@@ -17,6 +18,10 @@ var (
 )
 
 func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
+	if message.GuildID == viper.GetString("SKIP_SERVER") {
+		fmt.Println("skip")
+		return
+	}
 
 	post = isTwitterUrl(message.Content)
 	// post = isInstaUrl(post, message.Content)

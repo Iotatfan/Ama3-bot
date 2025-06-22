@@ -7,16 +7,14 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/iotatfan/sora-go/src"
-)
-
-var (
-	conf *src.Config
+	"github.com/spf13/viper"
 )
 
 func main() {
-	conf = src.LoadConfig("config.json")
 
-	discord, err := discordgo.New("Bot " + conf.BotToken)
+	src.LoadConfig()
+
+	discord, err := discordgo.New("Bot " + viper.GetString("TOKEN"))
 	if err != nil {
 		fmt.Println("Error creating discord session,", err)
 		return

@@ -1,9 +1,7 @@
 package src
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
+	"github.com/spf13/viper"
 )
 
 type Config struct {
@@ -13,13 +11,8 @@ type Config struct {
 	SkipServerId string `json:"skip_server"`
 }
 
-func LoadConfig(filename string) *Config {
-	body, err := os.ReadFile(filename)
-	if err != nil {
-		fmt.Println("error loading config,", err)
-		return nil
-	}
-	var conf Config
-	json.Unmarshal(body, &conf)
-	return &conf
+func LoadConfig() {
+	viper.SetConfigFile(".env")
+	viper.ReadInConfig()
+	viper.AutomaticEnv()
 }
