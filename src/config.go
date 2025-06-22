@@ -12,7 +12,7 @@ type Config struct {
 }
 
 func LoadConfig() {
-	viper.SetConfigFile(".env")
+	viper.SetConfigFile("ENV")
 	viper.ReadInConfig()
 	viper.AutomaticEnv()
 }
