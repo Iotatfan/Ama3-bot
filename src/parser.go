@@ -24,7 +24,7 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	}
 
 	post = isTwitterUrl(message.Content)
-	// post = isInstaUrl(post, message.Content)
+	post = isInstaUrl(message.Content)
 
 	fmt.Println(message.Content)
 
@@ -47,6 +47,7 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 func isTwitterUrl(url string) *Post {
 	var post Post
 
+	// TODO: regex
 	switch {
 	case strings.Contains(url, "https://x.com"):
 		post.PostUrl = strings.Replace(url, "https://x.com", "https://fxtwitter.com", 1)
@@ -62,21 +63,21 @@ func isTwitterUrl(url string) *Post {
 	return &post
 }
 
-// func isInstaUrl(url string) (string, bool) {
-// 	var newUrl string
-// 	var changed bool
+func isInstaUrl(url string) *Post {
+	var post Post
 
-// 	switch {
-// 	case strings.Contains(url, "https://instagram.com/p"):
-// 		newUrl = strings.Replace(url, "https://instagram.com/p", "https://ddinstagram.com/p", 1)
-// 		changed = true
-// 	case strings.Contains(url, "https://www.instagram.com/p"):
-// 		newUrl = strings.Replace(url, "https://www.instagram.com/p", "https://ddinstagram.com/p", 1)
-// 		changed = true
-// 	default:
-// 		newUrl = url
-// 		changed = false
-// 	}
+	// TODO: regex
+	switch {
+	case strings.Contains(url, "https://instagram.com/p"):
+		post.PostUrl = strings.Replace(url, "https://instagram.com/p", "https://kkinstagram.com/p", 1)
+		post.ShoudlFix = true
+	case strings.Contains(url, "https://www.instagram.com/p"):
+		post.PostUrl = strings.Replace(url, "https://www.instagram.com/p", "https://kkinstagram.com/p", 1)
+		post.ShoudlFix = true
+	default:
+		post.PostUrl = url
+		post.ShoudlFix = false
+	}
 
-// 	return newUrl, changed
-// }
+	return &post
+}
