@@ -74,6 +74,9 @@ func isInstaUrl(url string) *Post {
 	case strings.Contains(url, "https://www.instagram.com/p"):
 		post.PostUrl = strings.Replace(url, "https://www.instagram.com/p", "https://kkinstagram.com/p", 1)
 		post.ShoudlFix = true
+	case strings.Contains(url, "https://www.instagram.com/reel"):
+		post.PostUrl = strings.Replace(url, "https://www.instagram.com/reel", "https://kkinstagram.com/reel", 1)
+		post.ShoudlFix = true
 	default:
 		post.PostUrl = url
 		post.ShoudlFix = false
