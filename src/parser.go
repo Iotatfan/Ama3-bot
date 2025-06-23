@@ -56,6 +56,21 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	}
 }
 
+func assemblePost(matches [][]string, post Post, replaceText string) *Post {
+	var builder strings.Builder
+	for index, match := range matches {
+		fmt.Println(index, match)
+
+		builder.WriteString("\n")
+		builder.WriteString(strings.Replace(match[0], match[1], replaceText, 1))
+	}
+	post.PostUrl = builder.String()
+	post.ShoudlFix = true
+	post.SkipNextCheck = true
+
+	return &post
+}
+
 func isTwitterUrl(url string) *Post {
 	var post Post
 
@@ -64,18 +79,7 @@ func isTwitterUrl(url string) *Post {
 	matches := re.FindAllStringSubmatch(url, -1)
 
 	if len(matches) > 0 {
-		var builder strings.Builder
-		for index, match := range matches {
-			fmt.Println(index, match)
-
-			builder.WriteString("\n")
-			builder.WriteString(strings.Replace(match[0], match[1], "fxtwitter.com", 1))
-		}
-		post.PostUrl = builder.String()
-		post.ShoudlFix = true
-		post.SkipNextCheck = true
-
-		return &post
+		return assemblePost(matches, post, "fxtwitter.com")
 	}
 
 	post.PostUrl = url
@@ -88,29 +92,17 @@ func isTwitterUrl(url string) *Post {
 func isInstaUrl(url string) *Post {
 	var post Post
 
-	// TODO: regex
-	switch {
-	case strings.Contains(url, "https://instagram.com/p"):
-		post.PostUrl = strings.Replace(url, "https://instagram.com/p", "https://ddinstagram.com/p", 1)
-		post.ShoudlFix = true
-		post.SkipNextCheck = true
-	case strings.Contains(url, "https://www.instagram.com/p"):
-		post.PostUrl = strings.Replace(url, "https://www.instagram.com/p", "https://ddinstagram.com/p", 1)
-		post.ShoudlFix = true
-		post.SkipNextCheck = true
-	case strings.Contains(url, "https://instagram.com/reel"):
-		post.PostUrl = strings.Replace(url, "https://instagram.com/reel", "https://kkinstagram.com/reel", 1)
-		post.ShoudlFix = true
-		post.SkipNextCheck = true
-	case strings.Contains(url, "https://www.instagram.com/reel"):
-		post.PostUrl = strings.Replace(url, "https://www.instagram.com/reel", "https://kkinstagram.com/reel", 1)
-		post.ShoudlFix = true
-		post.SkipNextCheck = true
-	default:
-		post.PostUrl = url
-		post.ShoudlFix = false
-		post.SkipNextCheck = false
+	// TODO: store regex else where
+	re := regexp.MustCompile(`https?:\/\/(www\.)?instagram\.com\/(p|reel)\/[a-zA-Z0-9_-]+`)
+	matches := re.FindAllStringSubmatch(url, -1)
+
+	if len(matches) > 0 {
+		return assemblePost(matches, post, "ddinstagram.com")
 	}
+
+	post.PostUrl = url
+	post.ShoudlFix = false
+	post.SkipNextCheck = false
 
 	return &post
 }
