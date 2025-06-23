@@ -31,7 +31,7 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	fmt.Println(message.Content)
 	fmt.Println(" ")
 
-	if post.ShoudlFix {
+	if post != nil && post.ShoudlFix {
 		_, err := discord.ChannelMessageSendReply(message.ChannelID, post.PostUrl, message.Reference())
 		if err != nil {
 			fmt.Println(err)
