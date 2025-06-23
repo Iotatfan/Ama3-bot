@@ -55,18 +55,23 @@ func isTwitterUrl(url string) *Post {
 	case strings.Contains(url, "https://x.com"):
 		post.PostUrl = strings.Replace(url, "https://x.com", "https://fxtwitter.com", 1)
 		post.ShoudlFix = true
+		post.SkipNextCheck = true
 	case strings.Contains(url, "https://twitter.com"):
 		post.PostUrl = strings.Replace(url, "https://twitter.com", "https://fxtwitter.com", 1)
 		post.ShoudlFix = true
+		post.SkipNextCheck = true
 	case strings.Contains(url, "https://www.x.com"):
 		post.PostUrl = strings.Replace(url, "https://www.x.com", "https://fxtwitter.com", 1)
 		post.ShoudlFix = true
+		post.SkipNextCheck = true
 	case strings.Contains(url, "https://www.twitter.com"):
 		post.PostUrl = strings.Replace(url, "https://www.twitter.com", "https://fxtwitter.com", 1)
 		post.ShoudlFix = true
+		post.SkipNextCheck = true
 	default:
 		post.PostUrl = url
 		post.ShoudlFix = false
+		post.SkipNextCheck = false
 	}
 
 	return &post
@@ -80,18 +85,23 @@ func isInstaUrl(url string) *Post {
 	case strings.Contains(url, "https://instagram.com/p"):
 		post.PostUrl = strings.Replace(url, "https://instagram.com/p", "https://ddinstagram.com/p", 1)
 		post.ShoudlFix = true
+		post.SkipNextCheck = true
 	case strings.Contains(url, "https://www.instagram.com/p"):
 		post.PostUrl = strings.Replace(url, "https://www.instagram.com/p", "https://ddinstagram.com/p", 1)
 		post.ShoudlFix = true
+		post.SkipNextCheck = true
 	case strings.Contains(url, "https://instagram.com/reel"):
 		post.PostUrl = strings.Replace(url, "https://instagram.com/reel", "https://kkinstagram.com/reel", 1)
 		post.ShoudlFix = true
+		post.SkipNextCheck = true
 	case strings.Contains(url, "https://www.instagram.com/reel"):
 		post.PostUrl = strings.Replace(url, "https://www.instagram.com/reel", "https://kkinstagram.com/reel", 1)
 		post.ShoudlFix = true
+		post.SkipNextCheck = true
 	default:
 		post.PostUrl = url
 		post.ShoudlFix = false
+		post.SkipNextCheck = false
 	}
 
 	return &post
