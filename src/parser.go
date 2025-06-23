@@ -27,7 +27,7 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 		post = isInstaUrl(message.Content)
 	}
 
-	fmt.Println(message.Member.User.Username)
+	fmt.Println(message.Author.Username)
 	fmt.Println(message.Content)
 	fmt.Println(" ")
 
