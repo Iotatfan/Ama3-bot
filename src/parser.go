@@ -14,11 +14,20 @@ type Post struct {
 	SkipNextCheck bool   `json:"skip_next_check"`
 }
 
+type Self struct {
+	Avatar   string
+	Username string
+}
+
 var (
 	post *Post
+	self Self
 )
 
 func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
+	self.Avatar = discord.State.User.Avatar
+	self.Username = discord.State.User.Username
+
 	if message.GuildID != viper.GetString("SKIP_SERVER") {
 		post = isTwitterUrl(message.Content)
 	}
@@ -32,12 +41,12 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	fmt.Println(" ")
 
 	if post != nil && post.ShoudlFix {
-		_, err := discord.ChannelMessageSendReply(message.ChannelID, post.PostUrl, message.Reference())
+		_, err := discord.ChannelMessageSend(message.ChannelID, post.PostUrl)
 		if err != nil {
 			fmt.Println(err)
 		}
 
-		discord.ChannelMessageEdit(message.ChannelID, message.ID, message.Content)
+		// discord.ChannelMessageEdit(message.ChannelID, message.ID, message.Content)
 		err = discord.ChannelMessageDelete(message.ChannelID, message.ID)
 		if err != nil {
 			fmt.Println(err)
