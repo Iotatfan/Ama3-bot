@@ -92,29 +92,17 @@ func isTwitterUrl(url string) *Post {
 func isInstaUrl(url string) *Post {
 	var post Post
 
-	// TODO: regex
-	switch {
-	case strings.Contains(url, "https://instagram.com/p"):
-		post.PostUrl = strings.Replace(url, "https://instagram.com/p", "https://ddinstagram.com/p", 1)
-		post.ShoudlFix = true
-		post.SkipNextCheck = true
-	case strings.Contains(url, "https://www.instagram.com/p"):
-		post.PostUrl = strings.Replace(url, "https://www.instagram.com/p", "https://ddinstagram.com/p", 1)
-		post.ShoudlFix = true
-		post.SkipNextCheck = true
-	case strings.Contains(url, "https://instagram.com/reel"):
-		post.PostUrl = strings.Replace(url, "https://instagram.com/reel", "https://kkinstagram.com/reel", 1)
-		post.ShoudlFix = true
-		post.SkipNextCheck = true
-	case strings.Contains(url, "https://www.instagram.com/reel"):
-		post.PostUrl = strings.Replace(url, "https://www.instagram.com/reel", "https://kkinstagram.com/reel", 1)
-		post.ShoudlFix = true
-		post.SkipNextCheck = true
-	default:
-		post.PostUrl = url
-		post.ShoudlFix = false
-		post.SkipNextCheck = false
+	// TODO: store regex else where
+	re := regexp.MustCompile(`https?:\/\/(www\.)?instagram\.com\/(p|reel)\/[a-zA-Z0-9_-]+`)
+	matches := re.FindAllStringSubmatch(url, -1)
+
+	if len(matches) > 0 {
+		return assemblePost(matches, post, "ddinstagram.com")
 	}
+
+	post.PostUrl = url
+	post.ShoudlFix = false
+	post.SkipNextCheck = false
 
 	return &post
 }
