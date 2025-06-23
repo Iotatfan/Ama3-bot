@@ -56,6 +56,21 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	}
 }
 
+func assemblePost(matches [][]string, post Post, replaceText string) *Post {
+	var builder strings.Builder
+	for index, match := range matches {
+		fmt.Println(index, match)
+
+		builder.WriteString("\n")
+		builder.WriteString(strings.Replace(match[0], match[1], replaceText, 1))
+	}
+	post.PostUrl = builder.String()
+	post.ShoudlFix = true
+	post.SkipNextCheck = true
+
+	return &post
+}
+
 func isTwitterUrl(url string) *Post {
 	var post Post
 
@@ -64,18 +79,7 @@ func isTwitterUrl(url string) *Post {
 	matches := re.FindAllStringSubmatch(url, -1)
 
 	if len(matches) > 0 {
-		var builder strings.Builder
-		for index, match := range matches {
-			fmt.Println(index, match)
-
-			builder.WriteString("\n")
-			builder.WriteString(strings.Replace(match[0], match[1], "fxtwitter.com", 1))
-		}
-		post.PostUrl = builder.String()
-		post.ShoudlFix = true
-		post.SkipNextCheck = true
-
-		return &post
+		return assemblePost(matches, post, "fxtwitter.com")
 	}
 
 	post.PostUrl = url
