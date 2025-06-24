@@ -94,7 +94,7 @@ func isInstaUrl(url string) *Post {
 	var post Post
 
 	// TODO: store regex else where
-	re := regexp.MustCompile(`/\bhttps?:\/\/(?:www\.)?(instagram\.com\/(?:p|reel))\/[a-zA-Z0-9_-]+`)
+	re := regexp.MustCompile(`\bhttps?:\/\/(?:www\.)?(instagram\.com\/(?:p|reel))\/[a-zA-Z0-9_-]+`)
 	matches := re.FindAllStringSubmatch(url, -1)
 
 	if len(matches) > 0 {
