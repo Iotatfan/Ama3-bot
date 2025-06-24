@@ -20,12 +20,9 @@ type Self struct {
 	Username string
 }
 
-var (
-	post *Post
-	self Self
-)
-
 func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
+	var post *Post
+
 	if message.Author.ID == viper.GetString("BOT_ID") || message.Author.Bot {
 		fmt.Println("SKIP")
 		return
@@ -54,6 +51,10 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 			fmt.Println(err)
 		}
 	}
+
+	post.PostUrl = ""
+	post.ShoudlFix = false
+	post.SkipNextCheck = false
 }
 
 func assemblePost(matches [][]string, post Post, replaceText string) *Post {
@@ -93,7 +94,7 @@ func isInstaUrl(url string) *Post {
 	var post Post
 
 	// TODO: store regex else where
-	re := regexp.MustCompile(`https?:\/\/(www\.)?instagram\.com\/(p|reel)\/[a-zA-Z0-9_-]+`)
+	re := regexp.MustCompile(`/\bhttps?:\/\/(?:www\.)?(instagram\.com\/(?:p|reel))\/[a-zA-Z0-9_-]+`)
 	matches := re.FindAllStringSubmatch(url, -1)
 
 	if len(matches) > 0 {
