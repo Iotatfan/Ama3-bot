@@ -59,9 +59,7 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 
 func assemblePost(matches [][]string, post Post, replaceText string) *Post {
 	var builder strings.Builder
-	for index, match := range matches {
-		fmt.Println(index, match)
-
+	for _, match := range matches {
 		builder.WriteString("\n")
 		builder.WriteString(strings.Replace(match[0], match[1], replaceText, 1))
 	}
@@ -94,7 +92,7 @@ func isInstaUrl(url string) *Post {
 	var post Post
 
 	// TODO: store regex else where
-	re := regexp.MustCompile(`\bhttps?:\/\/(?:www\.)?(instagram\.com\/(?:p|reel))\/[a-zA-Z0-9_-]+`)
+	re := regexp.MustCompile(`\bhttps?:\/\/(?:www\.)?(instagram\.com)\/(?:p|reel)\/[a-zA-Z0-9_-]+`)
 	matches := re.FindAllStringSubmatch(url, -1)
 
 	if len(matches) > 0 {
