@@ -31,11 +31,11 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	log := fmt.Sprintf("%s : %s\n", message.Author, message.Content)
 	fmt.Printf(log)
 
-	bot, _ := discord.User(viper.GetString("BOT_ID"))
-	self := &Self{
-		Avatar:   bot.Avatar,
-		Username: bot.GlobalName,
-	}
+	// bot, _ := discord.User(viper.GetString("BOT_ID"))
+	// self := &Self{
+	// 	Avatar:   bot.Avatar,
+	// 	Username: bot.GlobalName,
+	// }
 
 	discord.UserUpdate(message.Author.GlobalName, message.Author.Avatar)
 
@@ -58,7 +58,7 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 			fmt.Println(err)
 		}
 	}
-	//discord.UserUpdate(self.Username, self.Avatar)
+	// discord.UserUpdate(self.Username, self.Avatar)
 
 	post.PostUrl = ""
 	post.ShoudlFix = false
