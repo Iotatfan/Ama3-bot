@@ -58,7 +58,7 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 			fmt.Println(err)
 		}
 	}
-	discord.UserUpdate(self.Username, self.Avatar)
+	//discord.UserUpdate(self.Username, self.Avatar)
 
 	post.PostUrl = ""
 	post.ShoudlFix = false
