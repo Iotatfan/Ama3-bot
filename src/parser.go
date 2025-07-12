@@ -28,6 +28,17 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 		return
 	}
 
+	log := fmt.Sprintf("%s : %s\n", message.Author, message.Content)
+	fmt.Printf(log)
+
+	bot, _ := discord.User(viper.GetString("BOT_ID"))
+	self := &Self{
+		Avatar:   bot.Avatar,
+		Username: bot.GlobalName,
+	}
+
+	discord.UserUpdate(message.Author.GlobalName, message.Author.Avatar)
+
 	if message.GuildID != viper.GetString("SKIP_SERVER") {
 		post = isTwitterUrl(message.Content)
 	}
@@ -35,10 +46,6 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	if post != nil && !post.SkipNextCheck {
 		post = isInstaUrl(message.Content)
 	}
-
-	fmt.Println(message.Author.Username)
-	fmt.Println(message.Content)
-	fmt.Println(" ")
 
 	if post != nil && post.ShoudlFix {
 		_, err := discord.ChannelMessageSend(message.ChannelID, post.PostUrl)
@@ -51,6 +58,7 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 			fmt.Println(err)
 		}
 	}
+	discord.UserUpdate(self.Username, self.Avatar)
 
 	post.PostUrl = ""
 	post.ShoudlFix = false
