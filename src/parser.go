@@ -31,14 +31,6 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	log := fmt.Sprintf("%s : %s\n", message.Author, message.Content)
 	fmt.Printf(log)
 
-	bot, _ := discord.User(viper.GetString("BOT_ID"))
-	self := &Self{
-		Avatar:   bot.Avatar,
-		Username: bot.GlobalName,
-	}
-
-	discord.UserUpdate(message.Author.GlobalName, message.Author.Avatar)
-
 	if message.GuildID != viper.GetString("SKIP_SERVER") {
 		post = isTwitterUrl(message.Content)
 	}
@@ -48,7 +40,14 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	}
 
 	if post != nil && post.ShoudlFix {
-		_, err := discord.ChannelMessageSend(message.ChannelID, post.PostUrl)
+		mem, _ := discord.GuildMember(message.GuildID, message.Author.ID)
+		fmt.Println(mem)
+		err := discord.GuildMemberNickname(message.GuildID, "@me", mem.DisplayName())
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		_, err = discord.ChannelMessageSend(message.ChannelID, post.PostUrl)
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -58,7 +57,6 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 			fmt.Println(err)
 		}
 	}
-	discord.UserUpdate(self.Username, self.Avatar)
 
 	post.PostUrl = ""
 	post.ShoudlFix = false
