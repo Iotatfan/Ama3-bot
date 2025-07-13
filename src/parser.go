@@ -31,6 +31,8 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	log := fmt.Sprintf("%s : %s\n", message.Author, message.Content)
 	fmt.Printf(log)
 
+	discord.UserUpdate(message.Author.GlobalName, message.Author.Avatar)
+
 	if message.GuildID != viper.GetString("SKIP_SERVER") {
 		post = isTwitterUrl(message.Content)
 	}
