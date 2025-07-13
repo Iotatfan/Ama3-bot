@@ -41,7 +41,6 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 
 	if post != nil && post.ShoudlFix {
 		mem, _ := discord.GuildMember(message.GuildID, message.Author.ID)
-		fmt.Println(mem)
 		err := discord.GuildMemberNickname(message.GuildID, "@me", mem.DisplayName())
 		if err != nil {
 			fmt.Println(err)
