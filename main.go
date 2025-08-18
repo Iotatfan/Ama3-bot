@@ -6,13 +6,15 @@ import (
 	"os/signal"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/iotatfan/sora-go/src"
+	"github.com/iotatfan/sora-go/internal/commands"
+	"github.com/iotatfan/sora-go/internal/config"
+	urlParser "github.com/iotatfan/sora-go/internal/parser"
 	"github.com/spf13/viper"
 )
 
 func main() {
 
-	src.LoadConfig()
+	config.LoadConfig()
 
 	discord, err := discordgo.New("Bot " + viper.GetString("TOKEN"))
 	if err != nil {
@@ -20,7 +22,8 @@ func main() {
 		return
 	}
 
-	discord.AddHandler(src.ParseUrl)
+	discord.AddHandler(urlParser.ParseUrl)
+	commands.RegisterCommands(discord)
 
 	discord.Open()
 	defer discord.Close()
