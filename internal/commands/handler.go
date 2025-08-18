@@ -31,7 +31,6 @@ var (
 
 	commandHandlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
 		"say": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-			fmt.Println(i.ApplicationCommandData().Options)
 
 			var inputString string
 			for _, opt := range i.ApplicationCommandData().Options {
@@ -42,11 +41,18 @@ var (
 			}
 
 			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
-					Content: fmt.Sprintf("%s\n", inputString),
+					Content: "",
 				},
 			})
+
+			_, err := s.ChannelMessageSend(i.ChannelID, inputString)
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			s.InteractionResponseDelete(i.Interaction)
 		},
 	}
 )
