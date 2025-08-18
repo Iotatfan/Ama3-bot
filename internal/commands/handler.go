@@ -24,6 +24,18 @@ var (
 					Required:    true, // Make the text input required
 				},
 			},
+		},
+		{
+			Name:        "nick",
+			Description: "*Warning. Change bot's nickname",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "nick",
+					Description: "New nickname",
+					Required:    true, // Make the text input required
+				},
+			},
 			// DefaultMemberPermissions: &defaultMemberPermissions,
 			// DMPermission:             &dmPermission,
 		},
@@ -48,6 +60,40 @@ var (
 			})
 
 			_, err := s.ChannelMessageSend(i.ChannelID, inputString)
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			s.InteractionResponseDelete(i.Interaction)
+		},
+		"nick": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			if i.Member.User.ID != viper.GetString("OWNER_ID") {
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "Ga boleh",
+					},
+				})
+
+				return
+			}
+
+			var inputString string
+			for _, opt := range i.ApplicationCommandData().Options {
+				if opt.Name == "nick" {
+					inputString = opt.StringValue() // Retrieve the string value
+					break
+				}
+			}
+
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "",
+				},
+			})
+
+			err := s.GuildMemberNickname(i.GuildID, "@me", inputString)
 			if err != nil {
 				fmt.Println(err)
 			}
