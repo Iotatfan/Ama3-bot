@@ -40,17 +40,19 @@ var (
 				}
 			}
 
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "",
+				},
+			})
+
 			_, err := s.ChannelMessageSend(i.ChannelID, inputString)
 			if err != nil {
 				fmt.Println(err)
 			}
 
-			// s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			// 	Type: discordgo.InteractionResponseChannelMessageWithSource,
-			// 	Data: &discordgo.InteractionResponseData{
-			// 		Content: inputString,
-			// 	},
-			// })
+			s.InteractionResponseDelete(i.Interaction)
 		},
 	}
 )
