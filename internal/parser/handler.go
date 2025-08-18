@@ -1,4 +1,4 @@
-package src
+package urlParser
 
 import (
 	"fmt"
@@ -28,6 +28,9 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 		return
 	}
 
+	log := fmt.Sprintf("%s : %s\n", message.Author, message.Content)
+	fmt.Printf(log)
+
 	if message.GuildID != viper.GetString("SKIP_SERVER") {
 		post = isTwitterUrl(message.Content)
 	}
@@ -36,12 +39,14 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 		post = isInstaUrl(message.Content)
 	}
 
-	fmt.Println(message.Author.Username)
-	fmt.Println(message.Content)
-	fmt.Println(" ")
-
 	if post != nil && post.ShoudlFix {
-		_, err := discord.ChannelMessageSend(message.ChannelID, post.PostUrl)
+		mem, _ := discord.GuildMember(message.GuildID, message.Author.ID)
+		err := discord.GuildMemberNickname(message.GuildID, "@me", mem.DisplayName())
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		_, err = discord.ChannelMessageSend(message.ChannelID, post.PostUrl)
 		if err != nil {
 			fmt.Println(err)
 		}
