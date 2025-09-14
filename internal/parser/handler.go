@@ -10,7 +10,7 @@ import (
 )
 
 type Post struct {
-	PostUrl       string `json:"post_url"`
+	Message       string `json:"message"`
 	ShoudlFix     bool   `json:"should_url"`
 	SkipNextCheck bool   `json:"skip_next_check"`
 }
@@ -28,36 +28,40 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 		return
 	}
 
+	slices := strings.Split(message.Content, "\n")
+
+	for _, slice := range slices {
+		if message.GuildID != viper.GetString("SKIP_SERVER") {
+			post = isTwitterUrl(slice)
+		}
+
+		if post != nil && !post.SkipNextCheck {
+			post = isInstaUrl(slice)
+		}
+
+		if post != nil && post.ShoudlFix {
+			mem, _ := discord.GuildMember(message.GuildID, message.Author.ID)
+			err := discord.GuildMemberNickname(message.GuildID, "@me", mem.DisplayName())
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			_, err = discord.ChannelMessageSend(message.ChannelID, post.Message)
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			err = discord.ChannelMessageDelete(message.ChannelID, message.ID)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+	}
+
 	log := fmt.Sprintf("%s : %s\n", message.Author, message.Content)
 	fmt.Printf(log)
 
-	if message.GuildID != viper.GetString("SKIP_SERVER") {
-		post = isTwitterUrl(message.Content)
-	}
-
-	if post != nil && !post.SkipNextCheck {
-		post = isInstaUrl(message.Content)
-	}
-
-	if post != nil && post.ShoudlFix {
-		mem, _ := discord.GuildMember(message.GuildID, message.Author.ID)
-		err := discord.GuildMemberNickname(message.GuildID, "@me", mem.DisplayName())
-		if err != nil {
-			fmt.Println(err)
-		}
-
-		_, err = discord.ChannelMessageSend(message.ChannelID, post.PostUrl)
-		if err != nil {
-			fmt.Println(err)
-		}
-
-		err = discord.ChannelMessageDelete(message.ChannelID, message.ID)
-		if err != nil {
-			fmt.Println(err)
-		}
-	}
-
-	post.PostUrl = ""
+	post.Message = ""
 	post.ShoudlFix = false
 	post.SkipNextCheck = false
 }
@@ -68,7 +72,7 @@ func assemblePost(matches [][]string, post Post, replaceText string) *Post {
 		builder.WriteString("\n")
 		builder.WriteString(strings.Replace(match[0], match[1], replaceText, 1))
 	}
-	post.PostUrl = builder.String()
+	post.Message = builder.String()
 	post.ShoudlFix = true
 	post.SkipNextCheck = true
 
@@ -83,10 +87,10 @@ func isTwitterUrl(url string) *Post {
 	matches := re.FindAllStringSubmatch(url, -1)
 
 	if len(matches) > 0 {
-		return assemblePost(matches, post, "fxtwitter.com")
+		return assemblePost(matches, post, viper.GetString("TWITTER_REPLACE_TEXT"))
 	}
 
-	post.PostUrl = url
+	post.Message = url
 	post.ShoudlFix = false
 	post.SkipNextCheck = false
 
@@ -101,10 +105,10 @@ func isInstaUrl(url string) *Post {
 	matches := re.FindAllStringSubmatch(url, -1)
 
 	if len(matches) > 0 {
-		return assemblePost(matches, post, "ddinstagram.com")
+		return assemblePost(matches, post, viper.GetString("IG_REPLACE_TEXT"))
 	}
 
-	post.PostUrl = url
+	post.Message = url
 	post.ShoudlFix = false
 	post.SkipNextCheck = false
 
