@@ -14,8 +14,12 @@ var (
 
 	commands = []*discordgo.ApplicationCommand{
 		{
+			Name:        "help",
+			Description: "Get help about how to use me",
+		},
+		{
 			Name:        "say",
-			Description: "Send message as Sora",
+			Description: "Send message as Ama3",
 			Options: []*discordgo.ApplicationCommandOption{
 				{
 					Type:        discordgo.ApplicationCommandOptionString,
@@ -42,6 +46,15 @@ var (
 	}
 
 	commandHandlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
+		"help": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "Please @Me to chat with me! I can also respond to messages that reply to my messages. Sometimes I will change the link in Twitter and Instagram messages to something else ehe~. I'm a Goldfish so I may forget the context of our conversation anytime soon.",
+				},
+			})
+		},
 		"say": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 			var inputString string
