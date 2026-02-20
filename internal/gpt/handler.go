@@ -151,18 +151,21 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 }
 
 func sendReplyMessage(discord *discordgo.Session, message *discordgo.MessageCreate, content string, convID string) {
+	// Discord has a message character limit of 2000, so we need to split the response into multiple messages if it's too long
 	if len(content) > 2000 {
 		respText := content
+		msgRef := message.Reference()
 		for len(respText) > 0 {
 			chunk := respText
 			if len(chunk) > 1990 {
 				chunk = respText[:1990]
 			}
-			sent, err := discord.ChannelMessageSendReply(message.ChannelID, chunk, message.Reference())
+			sent, err := discord.ChannelMessageSendReply(message.ChannelID, chunk, msgRef)
 			if err != nil {
 				fmt.Println(err)
 				return
 			}
+			msgRef = sent.Reference()
 			conversationMap.Set(convID, sent.ID)
 			respText = respText[len(chunk):]
 		}
