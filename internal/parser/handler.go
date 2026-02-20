@@ -40,13 +40,13 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 		}
 
 		if post != nil && post.ShoudlFix {
-			mem, _ := discord.GuildMember(message.GuildID, message.Author.ID)
-			err := discord.GuildMemberNickname(message.GuildID, "@me", mem.DisplayName())
-			if err != nil {
-				fmt.Println(err)
-			}
+			// mem, _ := discord.GuildMember(message.GuildID, message.Author.ID)
+			// err := discord.GuildMemberNickname(message.GuildID, "@me", mem.DisplayName())
+			// if err != nil {
+			// 	fmt.Println(err)
+			// }
 
-			_, err = discord.ChannelMessageSend(message.ChannelID, post.Message)
+			_, err := discord.ChannelMessageSend(message.ChannelID, post.Message)
 			if err != nil {
 				fmt.Println(err)
 			}

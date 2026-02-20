@@ -55,8 +55,9 @@ func ParseGptMessage(discord *discordgo.Session, message *discordgo.MessageCreat
 
 func GenerateNewResponse(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
-		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(message.Content)},
-		Model: openai.ChatModelGPT4_1Nano,
+		Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(message.Content)},
+		Model:        openai.ChatModelGPT4_1Nano,
+		Instructions: openai.String(viper.GetString("GPT_SYSTEM_PROMPT")),
 	})
 
 	if err != nil {
