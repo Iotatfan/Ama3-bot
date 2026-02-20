@@ -85,14 +85,16 @@ func ParseGptMessage(discord *discordgo.Session, message *discordgo.MessageCreat
 	}
 
 	fmt.Println("Ref:", message.MessageReference)
-	convID, ok := conversationMap.GetConversationByRef(message.MessageReference.MessageID)
-	if message.MessageReference != nil && message.ReferencedMessage.Author.ID == viper.GetString("BOT_ID") && ok {
-		fmt.Println("Found conversation ID:", convID)
-		GenerateFollowUpChat(discord, message, client, ctx)
-		return
+	if message.MessageReference != nil && message.ReferencedMessage.Author.ID == viper.GetString("BOT_ID") {
+		convID, ok := conversationMap.GetConversationByRef(message.MessageReference.MessageID)
+		if ok {
+			fmt.Println("Found conversation ID:", convID)
+			GenerateFollowUpChat(discord, message, client, ctx)
+			return
+		}
 	}
 
-	fmt.Println("Could not find conversation for reference message ID:", message.MessageReference.MessageID)
+	fmt.Println("Could not find conversation for reference message")
 	fmt.Println("Generating new chat...")
 	GenerateNewChat(discord, message, client, ctx)
 	return
