@@ -108,7 +108,7 @@ func GenerateNewChat(discord *discordgo.Session, message *discordgo.MessageCreat
 
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(message.Content)},
-		Model:        openai.ChatModelGPT4_1Nano,
+		Model:        openai.ChatModelGPT5Mini,
 		Instructions: openai.String(viper.GetString("GPT_SYSTEM_PROMPT")),
 		Conversation: responses.ResponseNewParamsConversationUnion{
 			OfConversationObject: &responses.ResponseConversationParam{
