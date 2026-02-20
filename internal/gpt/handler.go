@@ -6,12 +6,47 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/conversations"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/spf13/viper"
 )
 
-type Post struct {
-	Message string `json:"message"`
+// In-memory mapping of conversation IDs to Discord message IDs.
+// This is used to keep track of which GPT conversation corresponds to which Discord message
+var conversationMap = NewConversationMap()
+
+type ConversationMap struct {
+	convToRef map[string]string
+	refToConv map[string]string
+}
+
+func NewConversationMap() *ConversationMap {
+	return &ConversationMap{
+		convToRef: make(map[string]string),
+		refToConv: make(map[string]string),
+	}
+}
+
+func (m *ConversationMap) Set(convID, refID string) {
+	m.convToRef[convID] = refID
+	m.refToConv[refID] = convID
+}
+
+func (m *ConversationMap) GetRef(convID string) (string, bool) {
+	ref, ok := m.convToRef[convID]
+	return ref, ok
+}
+
+func (m *ConversationMap) GetConversationByRef(refID string) (string, bool) {
+	conv, ok := m.refToConv[refID]
+	return conv, ok
+}
+
+func (m *ConversationMap) Delete(convID string) {
+	if ref, ok := m.convToRef[convID]; ok {
+		delete(m.convToRef, convID)
+		delete(m.refToConv, ref)
+	}
 }
 
 func isBotMentioned(message *discordgo.MessageCreate) bool {
@@ -49,31 +84,71 @@ func ParseGptMessage(discord *discordgo.Session, message *discordgo.MessageCreat
 		return
 	}
 
-	if message.ReferencedMessage != nil && message.ReferencedMessage.Author.ID == viper.GetString("BOT_ID") {
-		GenerateFollowUpChat(discord, message)
+	fmt.Println("Ref:", message.MessageReference)
+	if message.MessageReference != nil && message.ReferencedMessage.Author.ID == viper.GetString("BOT_ID") {
+		GenerateFollowUpChat(discord, message, client, ctx)
 		return
 	}
 
+	fmt.Println("Generating new chat...")
+	fmt.Println(message.Reference())
 	GenerateNewChat(discord, message, client, ctx)
-	return
 }
 
 func GenerateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
+	conv, err := client.Conversations.New(ctx, conversations.ConversationNewParams{})
+	if err != nil {
+		panic(err)
+	}
+
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(message.Content)},
 		Model:        openai.ChatModelGPT4_1Nano,
 		Instructions: openai.String(viper.GetString("GPT_SYSTEM_PROMPT")),
+		Conversation: responses.ResponseNewParamsConversationUnion{
+			OfConversationObject: &responses.ResponseConversationParam{
+				ID: conv.ID,
+			},
+		},
 	})
 
 	if err != nil {
 		fmt.Println("error generating response:", err)
 		return
 	}
-	_, err = discord.ChannelMessageSend(message.ChannelID, resp.OutputText())
+
+	sent, err := discord.ChannelMessageSendReply(message.ChannelID, resp.OutputText(), message.Reference())
 	if err != nil {
 		fmt.Println(err)
+		return
 	}
+
+	conversationMap.Set(conv.ID, sent.ID)
 }
 
-func GenerateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate) {
+func GenerateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
+	refID := message.MessageReference.MessageID
+	convID, ok := conversationMap.GetConversationByRef(refID)
+	if !ok {
+		// fallback: just treat the referenced message itself as the conversation
+		convID = refID
+	}
+
+	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
+		Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(message.Content)},
+		Model:        openai.ChatModelGPT4_1Nano,
+		Instructions: openai.String(viper.GetString("GPT_SYSTEM_PROMPT")),
+		Conversation: responses.ResponseNewParamsConversationUnion{
+			OfConversationObject: &responses.ResponseConversationParam{
+				ID: convID,
+			},
+		},
+	})
+
+	sent, err := discord.ChannelMessageSendReply(message.ChannelID, resp.OutputText(), message.Reference())
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	conversationMap.Set(convID, sent.ID)
 }
