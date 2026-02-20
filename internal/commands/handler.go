@@ -25,7 +25,6 @@ var (
 					Type:        discordgo.ApplicationCommandOptionString,
 					Name:        "message",
 					Description: "The message to echo.",
-					Required:    true, // Make the text input required
 				},
 			},
 		},
@@ -40,8 +39,6 @@ var (
 					Required:    true, // Make the text input required
 				},
 			},
-			// DefaultMemberPermissions: &defaultMemberPermissions,
-			// DMPermission:             &dmPermission,
 		},
 	}
 

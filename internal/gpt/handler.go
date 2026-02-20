@@ -89,49 +89,34 @@ func ParseGptMessage(discord *discordgo.Session, message *discordgo.MessageCreat
 		convID, ok := conversationMap.GetConversationByRef(message.MessageReference.MessageID)
 		if ok {
 			fmt.Println("Found conversation ID:", convID)
-			GenerateFollowUpChat(discord, message, client, ctx)
+			generateFollowUpChat(discord, message, client, ctx)
 			return
 		}
 	}
 
 	fmt.Println("Could not find conversation for reference message")
 	fmt.Println("Generating new chat...")
-	GenerateNewChat(discord, message, client, ctx)
+	generateNewChat(discord, message, client, ctx)
 	return
 }
 
-func GenerateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
+func generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
 	conv, err := client.Conversations.New(ctx, conversations.ConversationNewParams{})
 	if err != nil {
 		panic(err)
 	}
 
-	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
-		Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(message.Content)},
-		Model:        openai.ChatModelGPT5Mini,
-		Instructions: openai.String(viper.GetString("GPT_SYSTEM_PROMPT")),
-		Conversation: responses.ResponseNewParamsConversationUnion{
-			OfConversationObject: &responses.ResponseConversationParam{
-				ID: conv.ID,
-			},
-		},
-	})
+	resp, err := generateGptResponse(message, client, ctx, conv.ID)
 
 	if err != nil {
 		fmt.Println("error generating response:", err)
 		return
 	}
 
-	sent, err := discord.ChannelMessageSendReply(message.ChannelID, resp.OutputText(), message.Reference())
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	conversationMap.Set(conv.ID, sent.ID)
+	sendReplyMessage(discord, message, resp.OutputText(), conv.ID)
 }
 
-func GenerateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
+func generateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
 	refID := message.MessageReference.MessageID
 	convID, ok := conversationMap.GetConversationByRef(refID)
 	if !ok {
@@ -140,6 +125,17 @@ func GenerateFollowUpChat(discord *discordgo.Session, message *discordgo.Message
 	}
 	fmt.Println("Generating follow-up chat for conversation ID:", convID)
 
+	resp, err := generateGptResponse(message, client, ctx, convID)
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	sendReplyMessage(discord, message, resp.OutputText(), convID)
+}
+
+func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, convID string) (*responses.Response, error) {
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(message.Content)},
 		Model:        openai.ChatModelGPT5Mini,
@@ -151,10 +147,31 @@ func GenerateFollowUpChat(discord *discordgo.Session, message *discordgo.Message
 		},
 	})
 
-	sent, err := discord.ChannelMessageSendReply(message.ChannelID, resp.OutputText(), message.Reference())
-	if err != nil {
-		fmt.Println(err)
-		return
+	return resp, err
+}
+
+func sendReplyMessage(discord *discordgo.Session, message *discordgo.MessageCreate, content string, convID string) {
+	if len(content) > 2000 {
+		respText := content
+		for len(respText) > 0 {
+			chunk := respText
+			if len(chunk) > 1990 {
+				chunk = respText[:1990]
+			}
+			sent, err := discord.ChannelMessageSendReply(message.ChannelID, chunk, message.Reference())
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			conversationMap.Set(convID, sent.ID)
+			respText = respText[len(chunk):]
+		}
+	} else {
+		sent, err := discord.ChannelMessageSendReply(message.ChannelID, content, message.Reference())
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		conversationMap.Set(convID, sent.ID)
 	}
-	conversationMap.Set(convID, sent.ID)
 }
