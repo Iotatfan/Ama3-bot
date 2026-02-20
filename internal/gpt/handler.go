@@ -49,11 +49,16 @@ func ParseGptMessage(discord *discordgo.Session, message *discordgo.MessageCreat
 		return
 	}
 
-	// TODO: handle the message once we're tagged/replied (generate response, etc.)
-	GenerateNewResponse(discord, message, client, ctx)
+	if message.ReferencedMessage != nil && message.ReferencedMessage.Author.ID == viper.GetString("BOT_ID") {
+		GenerateFollowUpChat(discord, message)
+		return
+	}
+
+	GenerateNewChat(discord, message, client, ctx)
+	return
 }
 
-func GenerateNewResponse(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
+func GenerateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(message.Content)},
 		Model:        openai.ChatModelGPT4_1Nano,
@@ -70,5 +75,5 @@ func GenerateNewResponse(discord *discordgo.Session, message *discordgo.MessageC
 	}
 }
 
-func GenerateFollowUpResponse(discord *discordgo.Session, message *discordgo.MessageCreate) {
+func GenerateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate) {
 }
