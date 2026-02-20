@@ -138,10 +138,11 @@ func GenerateFollowUpChat(discord *discordgo.Session, message *discordgo.Message
 		// fallback: go to generate chat flow
 		return
 	}
+	fmt.Println("Generating follow-up chat for conversation ID:", convID)
 
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(message.Content)},
-		Model:        openai.ChatModelGPT4_1Nano,
+		Model:        openai.ChatModelGPT5Mini,
 		Instructions: openai.String(viper.GetString("GPT_SYSTEM_PROMPT")),
 		Conversation: responses.ResponseNewParamsConversationUnion{
 			OfConversationObject: &responses.ResponseConversationParam{
