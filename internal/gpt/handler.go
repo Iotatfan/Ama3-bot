@@ -14,8 +14,6 @@ type Post struct {
 	Message string `json:"message"`
 }
 
-// isBotMentioned returns true if the configured bot ID appears
-// in the list of users mentioned in the message.
 func isBotMentioned(message *discordgo.MessageCreate) bool {
 	botID := viper.GetString("BOT_ID")
 	for _, u := range message.Mentions {
@@ -26,8 +24,6 @@ func isBotMentioned(message *discordgo.MessageCreate) bool {
 	return false
 }
 
-// isReplyToBot checks if the incoming message is a reply to a
-// message originally sent by the bot itself.
 func isReplyToBot(discord *discordgo.Session, message *discordgo.MessageCreate) bool {
 	if message.MessageReference == nil || message.MessageReference.MessageID == "" {
 		return false
@@ -36,7 +32,6 @@ func isReplyToBot(discord *discordgo.Session, message *discordgo.MessageCreate) 
 	refID := message.MessageReference.MessageID
 	msg, err := discord.ChannelMessage(message.ChannelID, refID)
 	if err != nil {
-		// unable to fetch the referenced message; assume not a bot reply
 		fmt.Println("reply lookup failed:", err)
 		return false
 	}
@@ -45,13 +40,11 @@ func isReplyToBot(discord *discordgo.Session, message *discordgo.MessageCreate) 
 }
 
 func ParseGptMessage(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
-	// ignore messages from ourselves or other bots
 	if message.Author.ID == viper.GetString("BOT_ID") || message.Author.Bot {
 		fmt.Println("SKIP")
 		return
 	}
 
-	// proceed when either tagged or replying to a bot message
 	if !isBotMentioned(message) && !isReplyToBot(discord, message) {
 		return
 	}
