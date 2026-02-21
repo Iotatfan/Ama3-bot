@@ -3,6 +3,7 @@ package chatGpt
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/openai/openai-go/v3"
@@ -154,21 +155,23 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 		}
 
 		for _, att := range attachments {
-			fmt.Println("Adding attachment URL to input:", att.URL)
-			input.OfInputItemList = append(input.OfInputItemList, responses.ResponseInputItemUnionParam{
-				OfMessage: &responses.EasyInputMessageParam{
-					Content: responses.EasyInputMessageContentUnionParam{
-						OfInputItemContentList: []responses.ResponseInputContentUnionParam{
-							{
-								OfInputImage: &responses.ResponseInputImageParam{
-									ImageURL: openai.String(att.URL),
+			if strings.HasPrefix(att.ContentType, "image/") {
+				fmt.Println("Adding attachment URL to input:", att.URL)
+				input.OfInputItemList = append(input.OfInputItemList, responses.ResponseInputItemUnionParam{
+					OfMessage: &responses.EasyInputMessageParam{
+						Content: responses.EasyInputMessageContentUnionParam{
+							OfInputItemContentList: []responses.ResponseInputContentUnionParam{
+								{
+									OfInputImage: &responses.ResponseInputImageParam{
+										ImageURL: openai.String(att.URL),
+									},
 								},
 							},
 						},
+						Role: responses.EasyInputMessageRoleUser,
 					},
-					Role: responses.EasyInputMessageRoleUser,
-				},
-			})
+				})
+			}
 		}
 	}
 
