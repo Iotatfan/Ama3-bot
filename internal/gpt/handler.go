@@ -136,8 +136,39 @@ func generateFollowUpChat(discord *discordgo.Session, message *discordgo.Message
 }
 
 func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, convID string) (*responses.Response, error) {
+	input := responses.ResponseNewParamsInputUnion{
+		// OfString: openai.String(message.Content),
+		OfInputItemList: []responses.ResponseInputItemUnionParam{{
+			OfMessage: &responses.EasyInputMessageParam{
+				Content: responses.EasyInputMessageContentUnionParam{
+					OfString: openai.String(message.Content)},
+				Role: responses.EasyInputMessageRoleUser,
+			},
+		}},
+	}
+
+	if message.Attachments != nil {
+		for _, att := range message.Attachments {
+			fmt.Println("Adding attachment URL to input:", att.URL)
+			input.OfInputItemList = append(input.OfInputItemList, responses.ResponseInputItemUnionParam{
+				OfMessage: &responses.EasyInputMessageParam{
+					Content: responses.EasyInputMessageContentUnionParam{
+						OfInputItemContentList: []responses.ResponseInputContentUnionParam{
+							{
+								OfInputImage: &responses.ResponseInputImageParam{
+									ImageURL: openai.String(att.URL),
+								},
+							},
+						},
+					},
+					Role: responses.EasyInputMessageRoleUser,
+				},
+			})
+		}
+	}
+
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
-		Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(message.Content)},
+		Input:        input,
 		Model:        openai.ChatModelGPT5Mini,
 		Instructions: openai.String(viper.GetString("GPT_SYSTEM_PROMPT")),
 		Conversation: responses.ResponseNewParamsConversationUnion{
