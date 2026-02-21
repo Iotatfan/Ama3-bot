@@ -147,8 +147,13 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 		}},
 	}
 
-	if message.Attachments != nil {
-		for _, att := range message.Attachments {
+	if message.Attachments != nil || (message.ReferencedMessage != nil && message.ReferencedMessage.Attachments != nil) {
+		attachments := message.Attachments
+		if message.ReferencedMessage != nil {
+			attachments = append(attachments, message.ReferencedMessage.Attachments...)
+		}
+
+		for _, att := range attachments {
 			fmt.Println("Adding attachment URL to input:", att.URL)
 			input.OfInputItemList = append(input.OfInputItemList, responses.ResponseInputItemUnionParam{
 				OfMessage: &responses.EasyInputMessageParam{
