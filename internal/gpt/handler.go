@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/openai/openai-go/v3"
@@ -48,6 +49,10 @@ func (m *ConversationMap) Delete(convID string) {
 		delete(m.convToRef, convID)
 		delete(m.refToConv, ref)
 	}
+}
+
+type WebSearchInput struct {
+	Query string `json:"query"`
 }
 
 func isBotMentioned(message *discordgo.MessageCreate) bool {
@@ -184,7 +189,55 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 				ID: convID,
 			},
 		},
+		// Tools: []responses.ToolUnionParam{{
+		// 	OfFunction: &responses.FunctionToolParam{
+		// 		Name:        "web_search",
+		// 		Description: openai.String("Search web for up to date info"),
+		// 		Parameters: map[string]any{
+		// 			"type": "object",
+		// 			"properties": map[string]any{
+		// 				"query": map[string]any{
+		// 					"type":        "string",
+		// 					"description": "Search query",
+		// 				},
+		// 			},
+		// 			"required": []string{"query"},
+		// 		},
+		// 	},
+		// }},
 	})
+
+	// for _, item := range resp.Output {
+	// 	fmt.Println("GPT Resp", item.Type)
+	// 	if item.Type == "function_call" {
+	// 		toolCall := item.AsFunctionCall()
+	// 		if toolCall.Name == "web_search" {
+	// 			var args WebSearchInput
+	// 			json.Unmarshal([]byte(toolCall.Arguments), &args)
+	// 			fmt.Println("Query", args.Query)
+
+	// 			resp2, err := client.Responses.New(ctx, responses.ResponseNewParams{
+	// 				Model:              openai.ChatModelGPT5Mini,
+	// 				PreviousResponseID: openai.String(resp.ID),
+	// 				// Instructions:       openai.String(viper.GetString("GPT_SYSTEM_PROMPT")),
+	// 				Input: responses.ResponseNewParamsInputUnion{
+	// 					OfInputItemList: []responses.ResponseInputItemUnionParam{{
+	// 						OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
+	// 							CallID: toolCall.CallID,
+	// 							Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
+	// 								OfString: openai.String(args.Query),
+	// 							},
+	// 						},
+	// 					}},
+	// 				},
+	// 			})
+
+	// 			fmt.Println("GPT Resp: ", resp2)
+
+	// 			return resp2, err
+	// 		}
+	// 	}
+	// }
 
 	return resp, err
 }
@@ -192,13 +245,10 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 func sendReplyMessage(discord *discordgo.Session, message *discordgo.MessageCreate, content string, convID string) {
 	// Discord has a message character limit of 2000, so we need to split the response into multiple messages if it's too long
 	if len(content) > 2000 {
-		respText := content
+		chunks := smartSentenceChunk(content, 2000)
 		msgRef := message.Reference()
-		for len(respText) > 0 {
-			chunk := respText
-			if len(chunk) > 1990 {
-				chunk = respText[:1990]
-			}
+
+		for _, chunk := range chunks {
 			sent, err := discord.ChannelMessageSendReply(message.ChannelID, chunk, msgRef)
 			if err != nil {
 				fmt.Println(err)
@@ -206,7 +256,8 @@ func sendReplyMessage(discord *discordgo.Session, message *discordgo.MessageCrea
 			}
 			msgRef = sent.Reference()
 			conversationMap.Set(convID, sent.ID)
-			respText = respText[len(chunk):]
+
+			time.Sleep(300 * time.Millisecond)
 		}
 	} else {
 		sent, err := discord.ChannelMessageSendReply(message.ChannelID, content, message.Reference())
@@ -216,4 +267,34 @@ func sendReplyMessage(discord *discordgo.Session, message *discordgo.MessageCrea
 		}
 		conversationMap.Set(convID, sent.ID)
 	}
+}
+
+func smartSentenceChunk(text string, limit int) []string {
+	var chunks []string
+
+	for len(text) > limit {
+		cut := -1
+
+		// Look backwards for sentence or paragraph end
+		for i := limit; i > limit-400 && i > 0; i-- {
+			c := text[i]
+			if c == '.' || c == '!' || c == '?' || c == '\n' {
+				cut = i + 1
+				break
+			}
+		}
+
+		if cut == -1 {
+			cut = limit // fallback if no sentence end found
+		}
+
+		chunks = append(chunks, text[:cut])
+		text = text[cut:]
+	}
+
+	if len(text) > 0 {
+		chunks = append(chunks, text)
+	}
+
+	return chunks
 }
