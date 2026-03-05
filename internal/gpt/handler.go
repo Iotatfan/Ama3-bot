@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -19,7 +18,6 @@ import (
 var conversationMap = NewConversationMap()
 
 type ConversationMap struct {
-	mu        sync.RWMutex
 	convToRef map[string]string
 	refToConv map[string]string
 }
@@ -32,33 +30,21 @@ func NewConversationMap() *ConversationMap {
 }
 
 func (m *ConversationMap) Set(convID, refID string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	m.convToRef[convID] = refID
 	m.refToConv[refID] = convID
 }
 
 func (m *ConversationMap) GetRef(convID string) (string, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	ref, ok := m.convToRef[convID]
 	return ref, ok
 }
 
 func (m *ConversationMap) GetConversationByRef(refID string) (string, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	conv, ok := m.refToConv[refID]
 	return conv, ok
 }
 
 func (m *ConversationMap) Delete(convID string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	if ref, ok := m.convToRef[convID]; ok {
 		delete(m.convToRef, convID)
 		delete(m.refToConv, ref)
@@ -123,8 +109,7 @@ func ParseGptMessage(discord *discordgo.Session, message *discordgo.MessageCreat
 func generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
 	conv, err := client.Conversations.New(ctx, conversations.ConversationNewParams{})
 	if err != nil {
-		fmt.Println("error generating response:", err)
-		return
+		panic(err)
 	}
 
 	resp, err := generateGptResponse(message, client, ctx, conv.ID)
