@@ -1,20 +1,52 @@
 package config
 
 import (
+	"fmt"
+
 	"github.com/spf13/viper"
 )
 
 type Config struct {
-	Prefix             string `json:"prefix"`
-	BotToken           string `json:"bot_token"`
-	OwnerId            string `json:"owner_id"`
-	SkipServerId       string `json:"skip_server"`
-	TwitterReplaceText string `json:"twitter_replace_text"`
-	IgReplaceText      string `json:"ig_replace_text"`
+	Token              string `mapstructure:"token"`
+	OwnerID            string `mapstructure:"owner_id"`
+	BotID              string `mapstructure:"bot_id"`
+	TwitterReplaceText string `mapstructure:"twitter_replace_text"`
+	IGReplaceText      string `mapstructure:"ig_replace_text"`
+	OpenAIKey          string `mapstructure:"open_ai_key"`
+	GPTSystemPrompt    string `mapstructure:"gpt_system_prompt"`
 }
 
-func LoadConfig() {
-	viper.SetConfigFile("ENV")
-	viper.ReadInConfig()
+var AppConfig *Config
+
+func LoadConfig() error {
+	// viper.SetConfigFile(".env")
+	// viper.ReadInConfig()
+	// viper.AutomaticEnv()
+
+	viper.SetConfigName("config")
+	viper.SetConfigType("yml")
+	viper.AddConfigPath(".")
+
+	// viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
+
+	err := viper.ReadInConfig()
+	if err != nil {
+		return err
+	}
+
+	var cfg Config
+	err = viper.Unmarshal(&cfg)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(cfg)
+	AppConfig = &cfg
+
+	return nil
+}
+
+func GetConfig() *Config {
+	return AppConfig
 }

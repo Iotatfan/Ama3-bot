@@ -18,7 +18,8 @@ import (
 
 func main() {
 	ctx := context.Background()
-	config.LoadConfig()
+
+	err := config.LoadConfig()
 
 	discord, err := discordgo.New("Bot " + viper.GetString("TOKEN"))
 	if err != nil {

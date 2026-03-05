@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/iotatfan/sora-go/internal/config"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/conversations"
 	"github.com/openai/openai-go/v3/responses"
-	"github.com/spf13/viper"
 )
 
 // In-memory mapping of conversation IDs to Discord message IDs.
@@ -56,7 +56,7 @@ type WebSearchInput struct {
 }
 
 func isBotMentioned(message *discordgo.MessageCreate) bool {
-	botID := viper.GetString("BOT_ID")
+	botID := config.GetConfig().BotID
 	for _, u := range message.Mentions {
 		if u.ID == botID {
 			return true
@@ -77,11 +77,11 @@ func isReplyToBot(discord *discordgo.Session, message *discordgo.MessageCreate) 
 		return false
 	}
 
-	return msg.Author.ID == viper.GetString("BOT_ID")
+	return msg.Author.ID == config.GetConfig().BotID
 }
 
 func ParseGptMessage(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
-	if message.Author.ID == viper.GetString("BOT_ID") || message.Author.Bot {
+	if message.Author.ID == config.GetConfig().BotID || message.Author.Bot {
 		fmt.Println("SKIP")
 		return
 	}
@@ -91,7 +91,7 @@ func ParseGptMessage(discord *discordgo.Session, message *discordgo.MessageCreat
 	}
 
 	fmt.Println("Ref:", message.MessageReference)
-	if message.MessageReference != nil && message.ReferencedMessage.Author.ID == viper.GetString("BOT_ID") {
+	if message.MessageReference != nil && message.ReferencedMessage.Author.ID == config.GetConfig().BotID {
 		convID, ok := conversationMap.GetConversationByRef(message.MessageReference.MessageID)
 		if ok {
 			fmt.Println("Found conversation ID:", convID)
@@ -183,7 +183,7 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input:        input,
 		Model:        openai.ChatModelGPT5Mini,
-		Instructions: openai.String(viper.GetString("GPT_SYSTEM_PROMPT")),
+		Instructions: openai.String(config.GetConfig().GPTSystemPrompt),
 		Conversation: responses.ResponseNewParamsConversationUnion{
 			OfConversationObject: &responses.ResponseConversationParam{
 				ID: convID,

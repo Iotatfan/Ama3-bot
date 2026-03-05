@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/spf13/viper"
+	"github.com/iotatfan/sora-go/internal/config"
 )
 
 type Post struct {
@@ -23,7 +23,7 @@ type Self struct {
 func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	var post *Post
 
-	if message.Author.ID == viper.GetString("BOT_ID") || message.Author.Bot {
+	if message.Author.ID == config.GetConfig().BotID || message.Author.Bot {
 		fmt.Println("SKIP")
 		return
 	}
@@ -31,9 +31,7 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	slices := strings.Split(message.Content, "\n")
 
 	for _, slice := range slices {
-		if message.GuildID != viper.GetString("SKIP_SERVER") {
-			post = isTwitterUrl(slice)
-		}
+		post = isTwitterUrl(slice)
 
 		// if post != nil && !post.SkipNextCheck {
 		// 	post = isInstaUrl(slice)
@@ -87,7 +85,7 @@ func isTwitterUrl(url string) *Post {
 	matches := re.FindAllStringSubmatch(url, -1)
 
 	if len(matches) > 0 {
-		return assemblePost(matches, post, viper.GetString("TWITTER_REPLACE_TEXT"))
+		return assemblePost(matches, post, config.GetConfig().TwitterReplaceText)
 	}
 
 	post.Message = url
@@ -105,7 +103,7 @@ func isInstaUrl(url string) *Post {
 	matches := re.FindAllStringSubmatch(url, -1)
 
 	if len(matches) > 0 {
-		return assemblePost(matches, post, viper.GetString("IG_REPLACE_TEXT"))
+		return assemblePost(matches, post, config.GetConfig().IGReplaceText)
 	}
 
 	post.Message = url
