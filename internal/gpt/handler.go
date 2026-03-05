@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -11,6 +12,7 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/conversations"
 	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 )
 
 // In-memory mapping of conversation IDs to Discord message IDs.
@@ -18,6 +20,7 @@ import (
 var conversationMap = NewConversationMap()
 
 type ConversationMap struct {
+	mu        sync.RWMutex
 	convToRef map[string]string
 	refToConv map[string]string
 }
@@ -30,21 +33,33 @@ func NewConversationMap() *ConversationMap {
 }
 
 func (m *ConversationMap) Set(convID, refID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	m.convToRef[convID] = refID
 	m.refToConv[refID] = convID
 }
 
 func (m *ConversationMap) GetRef(convID string) (string, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	ref, ok := m.convToRef[convID]
 	return ref, ok
 }
 
 func (m *ConversationMap) GetConversationByRef(refID string) (string, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	conv, ok := m.refToConv[refID]
 	return conv, ok
 }
 
 func (m *ConversationMap) Delete(convID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if ref, ok := m.convToRef[convID]; ok {
 		delete(m.convToRef, convID)
 		delete(m.refToConv, ref)
@@ -109,7 +124,8 @@ func ParseGptMessage(discord *discordgo.Session, message *discordgo.MessageCreat
 func generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
 	conv, err := client.Conversations.New(ctx, conversations.ConversationNewParams{})
 	if err != nil {
-		panic(err)
+		fmt.Println("error generating response:", err)
+		return
 	}
 
 	resp, err := generateGptResponse(message, client, ctx, conv.ID)
@@ -182,12 +198,15 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input:        input,
-		Model:        openai.ChatModelGPT5Mini,
+		Model:        openai.ChatModelGPT5_2,
 		Instructions: openai.String(config.GetConfig().GPTSystemPrompt),
 		Conversation: responses.ResponseNewParamsConversationUnion{
 			OfConversationObject: &responses.ResponseConversationParam{
 				ID: convID,
 			},
+		},
+		Reasoning: shared.ReasoningParam{
+			Effort: conversations.ReasoningEffortMedium,
 		},
 		// Tools: []responses.ToolUnionParam{{
 		// 	OfFunction: &responses.FunctionToolParam{
@@ -238,8 +257,29 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 	// 		}
 	// 	}
 	// }
+	if err == nil {
+		return resp, err
+	}
 
-	return resp, err
+	if strings.Contains(err.Error(), "quota") || strings.Contains(err.Error(), "rate") || strings.Contains(err.Error(), "limit") {
+		fmt.Println("Fallback to lighter model")
+
+		return client.Responses.New(ctx, responses.ResponseNewParams{
+			Input:        input,
+			Model:        openai.ChatModelGPT5_1Mini,
+			Instructions: openai.String(config.GetConfig().GPTSystemPrompt),
+			Conversation: responses.ResponseNewParamsConversationUnion{
+				OfConversationObject: &responses.ResponseConversationParam{
+					ID: convID,
+				},
+			},
+			Reasoning: shared.ReasoningParam{
+				Effort: conversations.ReasoningEffortMedium,
+			},
+		})
+	}
+
+	return nil, err
 }
 
 func sendReplyMessage(discord *discordgo.Session, message *discordgo.MessageCreate, content string, convID string) {
