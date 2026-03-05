@@ -19,7 +19,10 @@ import (
 func main() {
 	ctx := context.Background()
 
-	err := config.LoadConfig()
+	if err := config.LoadConfig(); err != nil {
+		fmt.Println("config load error:", err)
+		return
+	}
 
 	discord, err := discordgo.New("Bot " + viper.GetString("TOKEN"))
 	if err != nil {
@@ -28,7 +31,7 @@ func main() {
 	}
 
 	gptClient := openai.NewClient(
-		option.WithAPIKey(viper.GetString("OPEN_AI_KEY")), // defaults to os.LookupEnv("OPENAI_API_KEY")
+		option.WithAPIKey(config.GetConfig().OpenAIKey), // defaults to os.LookupEnv("OPENAI_API_KEY")
 	)
 
 	discord.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -37,7 +40,10 @@ func main() {
 	discord.AddHandler(urlParser.ParseUrl)
 	commands.RegisterCommands(discord)
 
-	discord.Open()
+	if err := discord.Open(); err != nil {
+		fmt.Println("discord open error:", err)
+		return
+	}
 	defer discord.Close()
 
 	fmt.Println("Started")

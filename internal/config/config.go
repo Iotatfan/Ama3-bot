@@ -1,8 +1,6 @@
 package config
 
 import (
-	"fmt"
-
 	"github.com/spf13/viper"
 )
 
@@ -19,15 +17,10 @@ type Config struct {
 var AppConfig *Config
 
 func LoadConfig() error {
-	// viper.SetConfigFile(".env")
-	// viper.ReadInConfig()
-	// viper.AutomaticEnv()
-
 	viper.SetConfigName("config")
 	viper.SetConfigType("yml")
 	viper.AddConfigPath(".")
 
-	// viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
 	err := viper.ReadInConfig()
@@ -41,7 +34,6 @@ func LoadConfig() error {
 		return err
 	}
 
-	fmt.Println(cfg)
 	AppConfig = &cfg
 
 	return nil

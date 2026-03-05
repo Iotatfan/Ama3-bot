@@ -91,7 +91,7 @@ func ParseGptMessage(discord *discordgo.Session, message *discordgo.MessageCreat
 	}
 
 	fmt.Println("Ref:", message.MessageReference)
-	if message.MessageReference != nil && message.ReferencedMessage.Author.ID == config.GetConfig().BotID {
+	if message.MessageReference != nil && message.ReferencedMessage != nil && message.ReferencedMessage.Author.ID == config.GetConfig().BotID {
 		convID, ok := conversationMap.GetConversationByRef(message.MessageReference.MessageID)
 		if ok {
 			fmt.Println("Found conversation ID:", convID)
