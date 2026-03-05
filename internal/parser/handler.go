@@ -57,7 +57,7 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	}
 
 	log := fmt.Sprintf("%s : %s\n", message.Author, message.Content)
-	fmt.Printf(log)
+	fmt.Print(log)
 
 	post.Message = ""
 	post.ShoudlFix = false

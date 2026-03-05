@@ -13,7 +13,6 @@ import (
 	urlParser "github.com/iotatfan/sora-go/internal/parser"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
-	"github.com/spf13/viper"
 )
 
 func main() {
@@ -24,7 +23,7 @@ func main() {
 		return
 	}
 
-	discord, err := discordgo.New("Bot " + viper.GetString("TOKEN"))
+	discord, err := discordgo.New("Bot " + config.GetConfig().Token)
 	if err != nil {
 		fmt.Println("Error creating discord session,", err)
 		return

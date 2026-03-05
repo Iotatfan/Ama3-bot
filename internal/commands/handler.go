@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/spf13/viper"
+	"github.com/iotatfan/sora-go/internal/config"
 )
 
 var (
@@ -77,7 +77,7 @@ var (
 			s.InteractionResponseDelete(i.Interaction)
 		},
 		"nick": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-			if i.Member.User.ID != viper.GetString("OWNER_ID") {
+			if i.Member.User.ID != config.GetConfig().OwnerID {
 				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseChannelMessageWithSource,
 					Data: &discordgo.InteractionResponseData{
@@ -118,7 +118,7 @@ func RegisterCommands(s *discordgo.Session) {
 
 	registeredCommands := make([]*discordgo.ApplicationCommand, len(commands))
 	for i, v := range commands {
-		cmd, err := s.ApplicationCommandCreate(viper.GetString("BOT_ID"), "", v)
+		cmd, err := s.ApplicationCommandCreate(config.GetConfig().BotID, "", v)
 		if err != nil {
 			fmt.Println("Cannot create '%v' command: %v", v.Name, err)
 		}
