@@ -33,9 +33,9 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	for _, slice := range slices {
 		post = isTwitterUrl(slice)
 
-		if post != nil && !post.SkipNextCheck {
-			post = isInstaUrl(slice)
-		}
+		// if post != nil && !post.SkipNextCheck {
+		// 	post = isInstaUrl(slice)
+		// }
 
 		if post != nil && post.ShoudlFix {
 
