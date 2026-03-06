@@ -33,23 +33,17 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	for _, slice := range slices {
 		post = isTwitterUrl(slice)
 
-		// if post != nil && !post.SkipNextCheck {
-		// 	post = isInstaUrl(slice)
-		// }
-
 		if post != nil && post.ShoudlFix {
-			// mem, _ := discord.GuildMember(message.GuildID, message.Author.ID)
-			// err := discord.GuildMemberNickname(message.GuildID, "@me", mem.DisplayName())
-			// if err != nil {
-			// 	fmt.Println(err)
-			// }
-
-			_, err := discord.ChannelMessageSend(message.ChannelID, post.Message)
+			_, err := discord.ChannelMessageSendReply(message.ChannelID, post.Message, message.Reference())
 			if err != nil {
 				fmt.Println(err)
 			}
 
-			err = discord.ChannelMessageDelete(message.ChannelID, message.ID)
+			_, err = discord.ChannelMessageEditComplex(&discordgo.MessageEdit{
+				ID:      message.ID,
+				Channel: message.ChannelID,
+				Flags:   discordgo.MessageFlagsSuppressEmbeds,
+			})
 			if err != nil {
 				fmt.Println(err)
 			}
