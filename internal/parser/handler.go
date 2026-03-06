@@ -33,7 +33,12 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 	for _, slice := range slices {
 		post = isTwitterUrl(slice)
 
+		if post != nil && !post.SkipNextCheck {
+			post = isInstaUrl(slice)
+		}
+
 		if post != nil && post.ShoudlFix {
+
 			_, err := discord.ChannelMessageSendReply(message.ChannelID, post.Message, message.Reference())
 			if err != nil {
 				fmt.Println(err)
@@ -91,6 +96,10 @@ func isTwitterUrl(url string) *Post {
 
 func isInstaUrl(url string) *Post {
 	var post Post
+
+	if i := strings.Index(url, "www."); i != -1 {
+		url = url[:i] + url[i+4:]
+	}
 
 	// TODO: store regex else where
 	re := regexp.MustCompile(`\bhttps?:\/\/(?:www\.)?(instagram\.com)\/(?:p|reel)\/[a-zA-Z0-9_-]+`)
