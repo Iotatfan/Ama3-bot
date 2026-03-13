@@ -21,25 +21,35 @@ type Self struct {
 }
 
 func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
-	var post *Post
-
-	if message.Author.ID == config.GetConfig().BotID || message.Author.Bot {
-		fmt.Println("SKIP")
+	if message == nil {
 		return
 	}
+
+	if message.Author != nil && (message.Author.ID == config.GetConfig().BotID || message.Author.Bot) {
+		return
+	}
+
+	log := fmt.Sprintf("%s : %s\n", message.Author, message.Content)
+	fmt.Print(log)
 
 	slices := strings.Split(message.Content, "\n")
 
 	for _, slice := range slices {
-		post = isTwitterUrl(slice)
+		twitterPost := isTwitterUrl(slice)
+		instaPost := isInstaUrl(slice)
 
-		// if post != nil && !post.SkipNextCheck {
-		// 	post = isInstaUrl(slice)
-		// }
+		var replies []string
+		if twitterPost != nil && twitterPost.ShoudlFix {
+			replies = append(replies, twitterPost.Message)
+		}
+		if instaPost != nil && instaPost.ShoudlFix {
+			replies = append(replies, instaPost.Message)
+		}
 
-		if post != nil && post.ShoudlFix {
+		if len(replies) > 0 {
+			replyMessage := strings.Join(replies, "\n")
 
-			_, err := discord.ChannelMessageSendReply(message.ChannelID, post.Message, message.Reference())
+			_, err := discord.ChannelMessageSendReply(message.ChannelID, replyMessage, message.Reference())
 			if err != nil {
 				fmt.Println(err)
 			}
@@ -54,19 +64,14 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 			}
 		}
 	}
-
-	log := fmt.Sprintf("%s : %s\n", message.Author, message.Content)
-	fmt.Print(log)
-
-	post.Message = ""
-	post.ShoudlFix = false
-	post.SkipNextCheck = false
 }
 
 func assemblePost(matches [][]string, post Post, replaceText string) *Post {
 	var builder strings.Builder
-	for _, match := range matches {
-		builder.WriteString("\n")
+	for i, match := range matches {
+		if i > 0 {
+			builder.WriteString("\n")
+		}
 		builder.WriteString(strings.Replace(match[0], match[1], replaceText, 1))
 	}
 	post.Message = builder.String()
