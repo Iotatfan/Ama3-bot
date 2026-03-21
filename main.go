@@ -33,6 +33,8 @@ func main() {
 		option.WithAPIKey(config.GetConfig().OpenAIKey), // defaults to os.LookupEnv("OPENAI_API_KEY")
 	)
 
+	fmt.Println(config.GetConfig().GPTSystemPrompt)
+
 	discord.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		chatGpt.ParseGptMessage(s, m, &gptClient, ctx)
 	})

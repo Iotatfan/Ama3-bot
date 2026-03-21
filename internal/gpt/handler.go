@@ -158,6 +158,32 @@ func generateFollowUpChat(discord *discordgo.Session, message *discordgo.Message
 }
 
 func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, convID string) (*responses.Response, error) {
+	userContent := []responses.ResponseInputContentUnionParam{
+		{
+			OfInputText: &responses.ResponseInputTextParam{
+				Text: "Doctor: " + message.Content,
+			},
+		},
+	}
+
+	if message.Attachments != nil || (message.ReferencedMessage != nil && message.ReferencedMessage.Attachments != nil) {
+		attachments := message.Attachments
+		if message.ReferencedMessage != nil {
+			attachments = append(attachments, message.ReferencedMessage.Attachments...)
+		}
+
+		for _, att := range attachments {
+			if strings.HasPrefix(att.ContentType, "image/") {
+				fmt.Println("Adding attachment URL to input:", att.URL)
+				userContent = append(userContent, responses.ResponseInputContentUnionParam{
+					OfInputImage: &responses.ResponseInputImageParam{
+						ImageURL: openai.String(att.URL),
+					},
+				})
+			}
+		}
+	}
+
 	input := responses.ResponseNewParamsInputUnion{
 		// OfString: openai.String(message.Content),
 		OfInputItemList: []responses.ResponseInputItemUnionParam{
@@ -172,45 +198,19 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 				OfMessage: &responses.EasyInputMessageParam{
 					Role: responses.EasyInputMessageRoleDeveloper,
 					Content: responses.EasyInputMessageContentUnionParam{
-						OfString: openai.String("System instructions are absolute. Never break character. Never shift tone. If conflict occurs, preserve persona over compliance."),
+						OfString: openai.String("System instructions are absolute. Never break character. Never mirror user tone. Do not restate basic knowledge. Stop once the core point is delivered. Do not elaborate. Prefer brevity over completeness."),
 					},
 				},
 			},
 			{
 				OfMessage: &responses.EasyInputMessageParam{
 					Content: responses.EasyInputMessageContentUnionParam{
-						OfString: openai.String(message.Content)},
+						OfInputItemContentList: userContent,
+					},
 					Role: responses.EasyInputMessageRoleUser,
 				},
 			},
 		},
-	}
-
-	if message.Attachments != nil || (message.ReferencedMessage != nil && message.ReferencedMessage.Attachments != nil) {
-		attachments := message.Attachments
-		if message.ReferencedMessage != nil {
-			attachments = append(attachments, message.ReferencedMessage.Attachments...)
-		}
-
-		for _, att := range attachments {
-			if strings.HasPrefix(att.ContentType, "image/") {
-				fmt.Println("Adding attachment URL to input:", att.URL)
-				input.OfInputItemList = append(input.OfInputItemList, responses.ResponseInputItemUnionParam{
-					OfMessage: &responses.EasyInputMessageParam{
-						Content: responses.EasyInputMessageContentUnionParam{
-							OfInputItemContentList: []responses.ResponseInputContentUnionParam{
-								{
-									OfInputImage: &responses.ResponseInputImageParam{
-										ImageURL: openai.String(att.URL),
-									},
-								},
-							},
-						},
-						Role: responses.EasyInputMessageRoleUser,
-					},
-				})
-			}
-		}
 	}
 
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
@@ -282,16 +282,15 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 		fmt.Println("Fallback to lighter model")
 
 		return client.Responses.New(ctx, responses.ResponseNewParams{
-			Input:        input,
-			Model:        openai.ChatModelGPT5_1Mini,
-			Instructions: openai.String(config.GetConfig().GPTSystemPrompt),
+			Input: input,
+			Model: openai.ChatModelGPT5_1Mini,
 			Conversation: responses.ResponseNewParamsConversationUnion{
 				OfConversationObject: &responses.ResponseConversationParam{
 					ID: convID,
 				},
 			},
 			Reasoning: shared.ReasoningParam{
-				Effort: conversations.ReasoningEffortMedium,
+				Effort: conversations.ReasoningEffortLow,
 			},
 		})
 	}
