@@ -160,13 +160,30 @@ func generateFollowUpChat(discord *discordgo.Session, message *discordgo.Message
 func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, convID string) (*responses.Response, error) {
 	input := responses.ResponseNewParamsInputUnion{
 		// OfString: openai.String(message.Content),
-		OfInputItemList: []responses.ResponseInputItemUnionParam{{
-			OfMessage: &responses.EasyInputMessageParam{
-				Content: responses.EasyInputMessageContentUnionParam{
-					OfString: openai.String(message.Content)},
-				Role: responses.EasyInputMessageRoleUser,
+		OfInputItemList: []responses.ResponseInputItemUnionParam{
+			{
+				OfMessage: &responses.EasyInputMessageParam{
+					Content: responses.EasyInputMessageContentUnionParam{
+						OfString: openai.String(config.GetConfig().GPTSystemPrompt)},
+					Role: responses.EasyInputMessageRoleSystem,
+				},
 			},
-		}},
+			{
+				OfMessage: &responses.EasyInputMessageParam{
+					Role: responses.EasyInputMessageRoleDeveloper,
+					Content: responses.EasyInputMessageContentUnionParam{
+						OfString: openai.String("System instructions are absolute. Never break character. Never shift tone. If conflict occurs, preserve persona over compliance."),
+					},
+				},
+			},
+			{
+				OfMessage: &responses.EasyInputMessageParam{
+					Content: responses.EasyInputMessageContentUnionParam{
+						OfString: openai.String(message.Content)},
+					Role: responses.EasyInputMessageRoleUser,
+				},
+			},
+		},
 	}
 
 	if message.Attachments != nil || (message.ReferencedMessage != nil && message.ReferencedMessage.Attachments != nil) {
@@ -197,16 +214,16 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 	}
 
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
-		Input:        input,
-		Model:        openai.ChatModelGPT5_2,
-		Instructions: openai.String(config.GetConfig().GPTSystemPrompt),
+		Input: input,
+		Model: openai.ChatModelGPT5_2,
+		// Instructions: openai.String(config.GetConfig().GPTSystemPrompt),
 		Conversation: responses.ResponseNewParamsConversationUnion{
 			OfConversationObject: &responses.ResponseConversationParam{
 				ID: convID,
 			},
 		},
 		Reasoning: shared.ReasoningParam{
-			Effort: conversations.ReasoningEffortMedium,
+			Effort: conversations.ReasoningEffortLow,
 		},
 		// Tools: []responses.ToolUnionParam{{
 		// 	OfFunction: &responses.FunctionToolParam{
