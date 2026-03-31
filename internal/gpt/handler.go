@@ -118,7 +118,6 @@ func ParseGptMessage(discord *discordgo.Session, message *discordgo.MessageCreat
 	fmt.Println("Could not find conversation for reference message")
 	fmt.Println("Generating new chat...")
 	generateNewChat(discord, message, client, ctx)
-	return
 }
 
 func generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
@@ -158,13 +157,28 @@ func generateFollowUpChat(discord *discordgo.Session, message *discordgo.Message
 }
 
 func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, convID string) (*responses.Response, error) {
+	targetUID := "none"
+	role := "external"
+	if message.Author.ID == config.GetConfig().App.OwnerID {
+		role = "doctor"
+	}
+	combinedContent := ""
+	if message.MessageReference != nil && message.ReferencedMessage.Author.ID != config.GetConfig().App.BotID {
+		targetUID = message.ReferencedMessage.Author.ID
+		combinedContent = fmt.Sprintf("[UID:%s][TARGET_UID:%s][TARGET_CONTEXT:%q] %s.", message.Author.ID, targetUID, message.ReferencedMessage.Content, message.Content)
+	} else {
+		combinedContent = fmt.Sprintf("[UID:%s][TARGET_UID:%s][ROLE:%s] %s", message.Author.ID, targetUID, role, message.Content)
+	}
+
 	userContent := []responses.ResponseInputContentUnionParam{
 		{
 			OfInputText: &responses.ResponseInputTextParam{
-				Text: "[UID:" + message.Author.ID + "]" + message.Content,
+				Text: combinedContent,
 			},
 		},
 	}
+
+	fmt.Println(userContent[0].OfInputText.Text)
 
 	if message.Attachments != nil || (message.ReferencedMessage != nil && message.ReferencedMessage.Attachments != nil) {
 		attachments := message.Attachments

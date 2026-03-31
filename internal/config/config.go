@@ -35,13 +35,7 @@ type ReplacementConfig struct {
 }
 
 type AIConfig struct {
-	Model    string         `mapstructure:"model" yaml:"model"`
-	Identity IdentityConfig `mapstructure:"identity" yaml:"identity"`
-	Prompts  PromptConfig   `mapstructure:"prompts" yaml:"prompts"`
-}
-
-type IdentityConfig struct {
-	DoctorUID string `mapstructure:"doctor_uid" yaml:"doctor_uid"`
+	Prompts PromptConfig `mapstructure:"prompts" yaml:"prompts"`
 }
 
 type PromptConfig struct {
