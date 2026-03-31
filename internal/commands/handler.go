@@ -77,7 +77,7 @@ var (
 			s.InteractionResponseDelete(i.Interaction)
 		},
 		"nick": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-			if i.Member.User.ID != config.GetConfig().OwnerID {
+			if i.Member.User.ID != config.GetConfig().App.OwnerID {
 				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseChannelMessageWithSource,
 					Data: &discordgo.InteractionResponseData{
@@ -118,7 +118,7 @@ func RegisterCommands(s *discordgo.Session) {
 
 	registeredCommands := make([]*discordgo.ApplicationCommand, len(commands))
 	for i, v := range commands {
-		cmd, err := s.ApplicationCommandCreate(config.GetConfig().BotID, "", v)
+		cmd, err := s.ApplicationCommandCreate(config.GetConfig().App.BotID, "", v)
 		if err != nil {
 			fmt.Println("Cannot create '%v' command: %v", v.Name, err)
 		}

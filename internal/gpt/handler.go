@@ -71,7 +71,7 @@ type WebSearchInput struct {
 }
 
 func isBotMentioned(message *discordgo.MessageCreate) bool {
-	botID := config.GetConfig().BotID
+	botID := config.GetConfig().App.BotID
 	for _, u := range message.Mentions {
 		if u.ID == botID {
 			return true
@@ -92,11 +92,11 @@ func isReplyToBot(discord *discordgo.Session, message *discordgo.MessageCreate) 
 		return false
 	}
 
-	return msg.Author.ID == config.GetConfig().BotID
+	return msg.Author.ID == config.GetConfig().App.BotID
 }
 
 func ParseGptMessage(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
-	if message.Author.ID == config.GetConfig().BotID || message.Author.Bot {
+	if message.Author.ID == config.GetConfig().App.BotID || message.Author.Bot {
 		fmt.Println("SKIP")
 		return
 	}
@@ -106,7 +106,7 @@ func ParseGptMessage(discord *discordgo.Session, message *discordgo.MessageCreat
 	}
 
 	fmt.Println("Ref:", message.MessageReference)
-	if message.MessageReference != nil && message.ReferencedMessage != nil && message.ReferencedMessage.Author.ID == config.GetConfig().BotID {
+	if message.MessageReference != nil && message.ReferencedMessage != nil && message.ReferencedMessage.Author.ID == config.GetConfig().App.BotID {
 		convID, ok := conversationMap.GetConversationByRef(message.MessageReference.MessageID)
 		if ok {
 			fmt.Println("Found conversation ID:", convID)
@@ -161,7 +161,7 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 	userContent := []responses.ResponseInputContentUnionParam{
 		{
 			OfInputText: &responses.ResponseInputTextParam{
-				Text: "Doctor: " + message.Content,
+				Text: "[UID:" + message.Author.ID + "]" + message.Content,
 			},
 		},
 	}
@@ -185,12 +185,18 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 	}
 
 	input := responses.ResponseNewParamsInputUnion{
-		// OfString: openai.String(message.Content),
 		OfInputItemList: []responses.ResponseInputItemUnionParam{
 			{
 				OfMessage: &responses.EasyInputMessageParam{
 					Content: responses.EasyInputMessageContentUnionParam{
-						OfString: openai.String(config.GetConfig().GPTSystemPrompt)},
+						OfString: openai.String(config.GetConfig().AI.Prompts.System)},
+					Role: responses.EasyInputMessageRoleSystem,
+				},
+			},
+			{
+				OfMessage: &responses.EasyInputMessageParam{
+					Content: responses.EasyInputMessageContentUnionParam{
+						OfString: openai.String(strings.Replace(config.GetConfig().AI.Prompts.IdentityRule, "{{.OwnerID}}", config.GetConfig().App.OwnerID, -1))},
 					Role: responses.EasyInputMessageRoleSystem,
 				},
 			},
@@ -198,7 +204,7 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 				OfMessage: &responses.EasyInputMessageParam{
 					Role: responses.EasyInputMessageRoleDeveloper,
 					Content: responses.EasyInputMessageContentUnionParam{
-						OfString: openai.String("System instructions are absolute. Never break character. Never mirror user tone. Do not restate basic knowledge. Stop once the core point is delivered. Do not elaborate. Prefer brevity over completeness."),
+						OfString: openai.String(config.GetConfig().AI.Prompts.Developer),
 					},
 				},
 			},

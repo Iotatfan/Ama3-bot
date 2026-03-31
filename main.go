@@ -23,17 +23,17 @@ func main() {
 		return
 	}
 
-	discord, err := discordgo.New("Bot " + config.GetConfig().Token)
+	discord, err := discordgo.New("Bot " + config.GetConfig().Auth.DiscordToken)
 	if err != nil {
 		fmt.Println("Error creating discord session,", err)
 		return
 	}
 
 	gptClient := openai.NewClient(
-		option.WithAPIKey(config.GetConfig().OpenAIKey), // defaults to os.LookupEnv("OPENAI_API_KEY")
+		option.WithAPIKey(config.GetConfig().Auth.OpenAIKey), // defaults to os.LookupEnv("OPENAI_API_KEY")
 	)
 
-	fmt.Println(config.GetConfig().GPTSystemPrompt)
+	fmt.Println(config.GetConfig().AI.Prompts.IdentityRule)
 
 	discord.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		chatGpt.ParseGptMessage(s, m, &gptClient, ctx)

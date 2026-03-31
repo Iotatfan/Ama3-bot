@@ -25,7 +25,7 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 		return
 	}
 
-	if message.Author != nil && (message.Author.ID == config.GetConfig().BotID || message.Author.Bot) {
+	if message.Author != nil && (message.Author.ID == config.GetConfig().App.BotID || message.Author.Bot) {
 		return
 	}
 
@@ -89,7 +89,7 @@ func isTwitterUrl(url string) *Post {
 	matches := re.FindAllStringSubmatch(url, -1)
 
 	if len(matches) > 0 {
-		return assemblePost(matches, post, config.GetConfig().TwitterReplaceText)
+		return assemblePost(matches, post, config.GetConfig().Platform.Replacements.Twitter)
 	}
 
 	post.Message = url
@@ -111,7 +111,7 @@ func isInstaUrl(url string) *Post {
 	matches := re.FindAllStringSubmatch(url, -1)
 
 	if len(matches) > 0 {
-		return assemblePost(matches, post, config.GetConfig().IGReplaceText)
+		return assemblePost(matches, post, config.GetConfig().Platform.Replacements.Instagram)
 	}
 
 	post.Message = url

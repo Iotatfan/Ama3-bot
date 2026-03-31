@@ -2,30 +2,66 @@ package config
 
 import (
 	"os"
+	"strings"
 
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	Token              string `mapstructure:"token" yaml:"token"`
-	OwnerID            string `mapstructure:"owner_id" yaml:"owner_id"`
-	BotID              string `mapstructure:"bot_id" yaml:"bot_id"`
-	TwitterReplaceText string `mapstructure:"twitter_replace_text" yaml:"twitter_replace_text"`
-	IGReplaceText      string `mapstructure:"ig_replace_text" yaml:"ig_replace_text"`
-	OpenAIKey          string `mapstructure:"open_ai_key" yaml:"open_ai_key"`
-	GPTSystemPrompt    string `mapstructure:"gpt_system_prompt" yaml:"gpt_system_prompt"`
+	App      AppConfig      `mapstructure:"app" yaml:"app"`
+	Auth     AuthConfig     `mapstructure:"auth" yaml:"auth"`
+	Platform PlatformConfig `mapstructure:"platform" yaml:"platform"`
+	AI       AIConfig       `mapstructure:"ai" yaml:"ai"`
 }
 
-var AppConfig *Config
+type AppConfig struct {
+	BotID   string `mapstructure:"bot_id" yaml:"bot_id"`
+	OwnerID string `mapstructure:"owner_id" yaml:"owner_id"`
+}
+
+type AuthConfig struct {
+	DiscordToken string `mapstructure:"discord_token" yaml:"discord_token"`
+	OpenAIKey    string `mapstructure:"openai_key" yaml:"openai_key"`
+}
+
+type PlatformConfig struct {
+	Replacements ReplacementConfig `mapstructure:"replacements" yaml:"replacements"`
+}
+
+type ReplacementConfig struct {
+	Twitter   string `mapstructure:"twitter" yaml:"twitter"`
+	Instagram string `mapstructure:"instagram" yaml:"instagram"`
+}
+
+type AIConfig struct {
+	Model    string         `mapstructure:"model" yaml:"model"`
+	Identity IdentityConfig `mapstructure:"identity" yaml:"identity"`
+	Prompts  PromptConfig   `mapstructure:"prompts" yaml:"prompts"`
+}
+
+type IdentityConfig struct {
+	DoctorUID string `mapstructure:"doctor_uid" yaml:"doctor_uid"`
+}
+
+type PromptConfig struct {
+	System       string `mapstructure:"system" yaml:"system"`
+	IdentityRule string `mapstructure:"identity_rule" yaml:"identity_rule"`
+	Developer    string `mapstructure:"developer" yaml:"developer"`
+}
+
+var Cfg *Config
 
 func LoadConfig() error {
-	checkConfig()
+	if err := checkConfig(); err != nil {
+		return err
+	}
 
 	viper.SetConfigName("config")
 	viper.SetConfigType("yml")
 	viper.AddConfigPath(".")
 
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
 	err := viper.ReadInConfig()
@@ -39,7 +75,7 @@ func LoadConfig() error {
 		return err
 	}
 
-	AppConfig = &cfg
+	Cfg = &cfg
 
 	return nil
 }
@@ -60,5 +96,5 @@ func checkConfig() error {
 }
 
 func GetConfig() *Config {
-	return AppConfig
+	return Cfg
 }
