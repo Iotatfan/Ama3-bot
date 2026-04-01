@@ -33,6 +33,7 @@ const (
 	IntentReplyToTarget     Intent = "reply_to_target"
 	IntentAskAbout          Intent = "ask_about_target"
 	IntentValidationRequest Intent = "validation_request"
+	IntentActionOnSelf      Intent = "action_on_self"
 	Unknown                 Intent = "unknown"
 )
 
@@ -317,21 +318,20 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 		refMsg.Author.ID != config.GetConfig().App.OwnerID
 	isOwnerMessage := message.Author.ID == config.GetConfig().App.OwnerID
 
+	if isOwnerMessage {
+		role = "doctor"
+	}
+
 	if isReplyToExternal {
 		role = "doctor"
 		replyTarget = refMsg.Reference()
-	} else if isOwnerMessage && intent == IntentReplyToTarget && refMsg != nil {
-		role = "doctor"
-		replyTarget = refMsg.Reference()
-	} else if isOwnerMessage && intent != IntentReplyToTarget {
-		role = "doctor"
 	}
 
 	if refMsg != nil && refMsg.Author.ID != config.GetConfig().App.BotID {
 		targetUID = refMsg.Author.ID
-		combinedContent = fmt.Sprintf("[UID:%s][ROLE:%s][TARGET_UID:%s][TARGET_CONTEXT:%s] %s.", message.Author.ID, role, targetUID, refMsg.Content, message.Content)
+		combinedContent = fmt.Sprintf("[INTENT:%s][UID:%s][ROLE:%s][TARGET_UID:%s][TARGET_CONTEXT:%s] %s.", intent, message.Author.ID, role, targetUID, refMsg.Content, message.Content)
 	} else {
-		combinedContent = fmt.Sprintf("[UID:%s][ROLE:%s][TARGET_UID:%s] %s", message.Author.ID, role, targetUID, message.Content)
+		combinedContent = fmt.Sprintf("[INTENT:%s][UID:%s][ROLE:%s] %s", intent, message.Author.ID, role, message.Content)
 	}
 
 	userContent := []responses.ResponseInputContentUnionParam{
@@ -406,7 +406,7 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 			},
 		},
 		Reasoning: shared.ReasoningParam{
-			Effort: conversations.ReasoningEffortLow,
+			Effort: conversations.ReasoningEffortMedium,
 		},
 		// Tools: []responses.ToolUnionParam{{
 		// 	OfFunction: &responses.FunctionToolParam{
@@ -473,7 +473,7 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 				},
 			},
 			Reasoning: shared.ReasoningParam{
-				Effort: conversations.ReasoningEffortLow,
+				Effort: conversations.ReasoningEffortMedium,
 			},
 		})
 
