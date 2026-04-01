@@ -1,4 +1,4 @@
-package chatGpt
+package ai
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 )
 
 // In-memory mapping of conversation IDs to Discord message IDs.
-// This is used to keep track of which GPT conversation corresponds to which Discord message
+// This is used to keep track of which AI conversation corresponds to which Discord message
 var conversationMap = NewConversationMap()
 var typingManager = NewTypingManager()
 
@@ -25,6 +25,16 @@ type ConversationMap struct {
 	convToRef map[string]string
 	refToConv map[string]string
 }
+
+type Intent string
+
+const (
+	IntentDirect            Intent = "direct"
+	IntentReplyToTarget     Intent = "reply_to_target"
+	IntentAskAbout          Intent = "ask_about_target"
+	IntentValidationRequest Intent = "validation_request"
+	Unknown                 Intent = "unknown"
+)
 
 type typingWorker struct {
 	refCount int
@@ -178,7 +188,54 @@ func isReplyToBot(discord *discordgo.Session, message *discordgo.MessageCreate) 
 	return msg.Author.ID == config.GetConfig().App.BotID
 }
 
-func ParseGptMessage(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
+func stripBotMention(content string) string {
+	botID := config.GetConfig().App.BotID
+	replacer := strings.NewReplacer(
+		"<@"+botID+">", "",
+		"<@!"+botID+">", "",
+	)
+
+	return strings.TrimSpace(strings.Join(strings.Fields(replacer.Replace(content)), " "))
+}
+
+func determineIntent(message *discordgo.MessageCreate, ctx context.Context, client *openai.Client, isReplyFlow bool) Intent {
+	intentPrompt := ""
+	if isReplyFlow {
+		intentPrompt = strings.Replace(config.GetConfig().AI.Prompts.IntentReply, "{{.Message}}", message.Content, 1)
+		fmt.Println("Determining intent with prompt:", intentPrompt)
+	} else {
+		intentPrompt = strings.Replace(config.GetConfig().AI.Prompts.Intent, "{{.Message}}", message.Content, 1)
+	}
+	fmt.Println("Determining intent with prompt:", intentPrompt)
+
+	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
+		Input: responses.ResponseNewParamsInputUnion{
+			OfString: openai.String(intentPrompt),
+		},
+		Model: openai.ChatModelGPT5_4Nano,
+	})
+	if err != nil {
+		fmt.Println("error determining intent:", err)
+		return Unknown
+	}
+
+	fmt.Println("Intent response:", resp.OutputText())
+	// Parse the intent from the AI response
+	switch resp.OutputText() {
+	case "direct":
+		return IntentDirect
+	case "reply_to_target":
+		return IntentReplyToTarget
+	case "ask_about_target":
+		return IntentAskAbout
+	case "validation_request":
+		return IntentValidationRequest
+	default:
+		return Unknown
+	}
+}
+
+func ParseMessage(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
 	if message.Author.ID == config.GetConfig().App.BotID || message.Author.Bot {
 		fmt.Println("SKIP")
 		return
@@ -188,22 +245,25 @@ func ParseGptMessage(discord *discordgo.Session, message *discordgo.MessageCreat
 		return
 	}
 
+	message.Content = stripBotMention(message.Content)
+	intent := determineIntent(message, ctx, client, message.ReferencedMessage != nil)
+
 	fmt.Println("Ref:", message.MessageReference)
 	if message.MessageReference != nil && message.ReferencedMessage != nil && message.ReferencedMessage.Author.ID == config.GetConfig().App.BotID {
 		convID, ok := conversationMap.GetConversationByRef(message.MessageReference.MessageID)
 		if ok {
 			fmt.Println("Found conversation ID:", convID)
-			generateFollowUpChat(discord, message, client, ctx)
+			generateFollowUpChat(discord, message, client, ctx, intent)
 			return
 		}
 	}
 
 	fmt.Println("Could not find conversation for reference message")
 	fmt.Println("Generating new chat...")
-	generateNewChat(discord, message, client, ctx)
+	generateNewChat(discord, message, client, ctx, intent)
 }
 
-func generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
+func generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent) {
 	stopTyping := typingManager.Start(discord, message.ChannelID)
 	defer stopTyping()
 
@@ -213,17 +273,17 @@ func generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreat
 		return
 	}
 
-	resp, err := generateGptResponse(message, client, ctx, conv.ID)
+	resp, replyTarget, err := generateAIResponse(message, client, ctx, conv.ID, intent)
 
 	if err != nil {
 		fmt.Println("error generating response:", err)
 		return
 	}
 
-	sendReplyMessage(discord, message, resp.OutputText(), conv.ID)
+	sendReplyMessage(discord, message, resp.OutputText(), replyTarget, conv.ID)
 }
 
-func generateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
+func generateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent) {
 	stopTyping := typingManager.Start(discord, message.ChannelID)
 	defer stopTyping()
 
@@ -235,28 +295,43 @@ func generateFollowUpChat(discord *discordgo.Session, message *discordgo.Message
 	}
 	fmt.Println("Generating follow-up chat for conversation ID:", convID)
 
-	resp, err := generateGptResponse(message, client, ctx, convID)
+	resp, replyTarget, err := generateAIResponse(message, client, ctx, convID, intent)
 
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	sendReplyMessage(discord, message, resp.OutputText(), convID)
+	sendReplyMessage(discord, message, resp.OutputText(), replyTarget, convID)
 }
 
-func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, convID string) (*responses.Response, error) {
+func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, convID string, intent Intent) (*responses.Response, *discordgo.MessageReference, error) {
 	targetUID := "none"
 	role := "external"
-	if message.Author.ID == config.GetConfig().App.OwnerID {
+	combinedContent := ""
+	replyTarget := message.Reference()
+	refMsg := message.ReferencedMessage
+
+	isReplyToExternal := intent == IntentReplyToTarget &&
+		refMsg != nil &&
+		refMsg.Author.ID != config.GetConfig().App.OwnerID
+	isOwnerMessage := message.Author.ID == config.GetConfig().App.OwnerID
+
+	if isReplyToExternal {
+		role = "doctor"
+		replyTarget = refMsg.Reference()
+	} else if isOwnerMessage && intent == IntentReplyToTarget && refMsg != nil {
+		role = "doctor"
+		replyTarget = refMsg.Reference()
+	} else if isOwnerMessage && intent != IntentReplyToTarget {
 		role = "doctor"
 	}
-	combinedContent := ""
-	if message.ReferencedMessage != nil && message.ReferencedMessage.Author.ID != config.GetConfig().App.BotID {
-		targetUID = message.ReferencedMessage.Author.ID
-		combinedContent = fmt.Sprintf("[UID:%s][TARGET_UID:%s][TARGET_CONTEXT:%q] %s.", message.Author.ID, targetUID, message.ReferencedMessage.Content, message.Content)
+
+	if refMsg != nil && refMsg.Author.ID != config.GetConfig().App.BotID {
+		targetUID = refMsg.Author.ID
+		combinedContent = fmt.Sprintf("[UID:%s][ROLE:%s][TARGET_UID:%s][TARGET_CONTEXT:%s] %s.", message.Author.ID, role, targetUID, refMsg.Content, message.Content)
 	} else {
-		combinedContent = fmt.Sprintf("[UID:%s][TARGET_UID:%s][ROLE:%s] %s", message.Author.ID, targetUID, role, message.Content)
+		combinedContent = fmt.Sprintf("[UID:%s][ROLE:%s][TARGET_UID:%s] %s", message.Author.ID, role, targetUID, message.Content)
 	}
 
 	userContent := []responses.ResponseInputContentUnionParam{
@@ -325,7 +400,6 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input: input,
 		Model: openai.ChatModelGPT5_4,
-		// Instructions: openai.String(config.GetConfig().GPTSystemPrompt),
 		Conversation: responses.ResponseNewParamsConversationUnion{
 			OfConversationObject: &responses.ResponseConversationParam{
 				ID: convID,
@@ -384,13 +458,13 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 	// 	}
 	// }
 	if err == nil {
-		return resp, err
+		return resp, replyTarget, err
 	}
 
 	if strings.Contains(err.Error(), "quota") || strings.Contains(err.Error(), "rate") || strings.Contains(err.Error(), "limit") {
 		fmt.Println("Fallback to lighter model")
 
-		return client.Responses.New(ctx, responses.ResponseNewParams{
+		fallbackResp, fallbackErr := client.Responses.New(ctx, responses.ResponseNewParams{
 			Input: input,
 			Model: openai.ChatModelGPT5_4Mini,
 			Conversation: responses.ResponseNewParamsConversationUnion{
@@ -402,12 +476,18 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 				Effort: conversations.ReasoningEffortLow,
 			},
 		})
+
+		if fallbackErr != nil {
+			fmt.Println("Fallback also failed:", fallbackErr)
+			return nil, nil, fallbackErr
+		}
+		return fallbackResp, replyTarget, nil
 	}
 
-	return nil, err
+	return nil, nil, err
 }
 
-func sendReplyMessage(discord *discordgo.Session, message *discordgo.MessageCreate, content string, convID string) {
+func sendReplyMessage(discord *discordgo.Session, message *discordgo.MessageCreate, content string, replyTarget *discordgo.MessageReference, convID string) {
 	// Discord has a message character limit of 2000, so we need to split the response into multiple messages if it's too long
 	if len(content) > 2000 {
 		chunks := smartSentenceChunk(content, 2000)
@@ -425,7 +505,7 @@ func sendReplyMessage(discord *discordgo.Session, message *discordgo.MessageCrea
 			time.Sleep(300 * time.Millisecond)
 		}
 	} else {
-		sent, err := discord.ChannelMessageSendReply(message.ChannelID, content, message.Reference())
+		sent, err := discord.ChannelMessageSendReply(message.ChannelID, content, replyTarget)
 		if err != nil {
 			fmt.Println(err)
 			return

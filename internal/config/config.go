@@ -42,6 +42,8 @@ type PromptConfig struct {
 	System       string `mapstructure:"system" yaml:"system"`
 	IdentityRule string `mapstructure:"identity_rule" yaml:"identity_rule"`
 	Developer    string `mapstructure:"developer" yaml:"developer"`
+	Intent       string `mapstructure:"intent" yaml:"intent"`
+	IntentReply  string `mapstructure:"intent_reply" yaml:"intent_reply"`
 }
 
 var Cfg *Config

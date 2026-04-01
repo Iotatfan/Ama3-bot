@@ -7,9 +7,9 @@ import (
 	"os/signal"
 
 	"github.com/bwmarrin/discordgo"
+	aiHandler "github.com/iotatfan/sora-go/internal/ai"
 	"github.com/iotatfan/sora-go/internal/commands"
 	"github.com/iotatfan/sora-go/internal/config"
-	chatGpt "github.com/iotatfan/sora-go/internal/gpt"
 	urlParser "github.com/iotatfan/sora-go/internal/parser"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -29,14 +29,12 @@ func main() {
 		return
 	}
 
-	gptClient := openai.NewClient(
+	aiClient := openai.NewClient(
 		option.WithAPIKey(config.GetConfig().Auth.OpenAIKey), // defaults to os.LookupEnv("OPENAI_API_KEY")
 	)
 
-	fmt.Println(config.GetConfig().AI.Prompts.IdentityRule)
-
 	discord.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
-		chatGpt.ParseGptMessage(s, m, &gptClient, ctx)
+		aiHandler.ParseMessage(s, m, &aiClient, ctx)
 	})
 	discord.AddHandler(urlParser.ParseUrl)
 	commands.RegisterCommands(discord)
