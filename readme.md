@@ -32,8 +32,8 @@ Conversation context is stored in memory, allowing short-lived session continuit
 
 ## Model Strategy
 
-- **Primary:** GPT-5.2  
-- **Fallback:** GPT-5.1 Mini  
+- **Primary:** GPT-5.4  
+- **Fallback:** GPT-5.4-Mini  
 
 Fallback ensures response continuity when primary fails or is unavailable.
 

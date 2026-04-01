@@ -324,7 +324,7 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input: input,
-		Model: openai.ChatModelGPT5_2,
+		Model: openai.ChatModelGPT5_4,
 		// Instructions: openai.String(config.GetConfig().GPTSystemPrompt),
 		Conversation: responses.ResponseNewParamsConversationUnion{
 			OfConversationObject: &responses.ResponseConversationParam{
@@ -392,7 +392,7 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 
 		return client.Responses.New(ctx, responses.ResponseNewParams{
 			Input: input,
-			Model: openai.ChatModelGPT5_1Mini,
+			Model: openai.ChatModelGPT5_4Mini,
 			Conversation: responses.ResponseNewParamsConversationUnion{
 				OfConversationObject: &responses.ResponseConversationParam{
 					ID: convID,
