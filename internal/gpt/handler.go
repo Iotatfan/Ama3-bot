@@ -18,11 +18,22 @@ import (
 // In-memory mapping of conversation IDs to Discord message IDs.
 // This is used to keep track of which GPT conversation corresponds to which Discord message
 var conversationMap = NewConversationMap()
+var typingManager = NewTypingManager()
 
 type ConversationMap struct {
 	mu        sync.RWMutex
 	convToRef map[string]string
 	refToConv map[string]string
+}
+
+type typingWorker struct {
+	refCount int
+	stopCh   chan struct{}
+}
+
+type TypingManager struct {
+	mu      sync.Mutex
+	workers map[string]*typingWorker
 }
 
 func NewConversationMap() *ConversationMap {
@@ -32,9 +43,19 @@ func NewConversationMap() *ConversationMap {
 	}
 }
 
+func NewTypingManager() *TypingManager {
+	return &TypingManager{
+		workers: make(map[string]*typingWorker),
+	}
+}
+
 func (m *ConversationMap) Set(convID, refID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if oldRef, ok := m.convToRef[convID]; ok && oldRef != refID {
+		delete(m.refToConv, oldRef)
+	}
 
 	m.convToRef[convID] = refID
 	m.refToConv[refID] = convID
@@ -63,6 +84,68 @@ func (m *ConversationMap) Delete(convID string) {
 	if ref, ok := m.convToRef[convID]; ok {
 		delete(m.convToRef, convID)
 		delete(m.refToConv, ref)
+	}
+}
+
+func (m *TypingManager) Start(discord *discordgo.Session, channelID string) func() {
+	m.mu.Lock()
+	if worker, ok := m.workers[channelID]; ok {
+		worker.refCount++
+		m.mu.Unlock()
+		return m.stopFn(channelID)
+	}
+
+	worker := &typingWorker{
+		refCount: 1,
+		stopCh:   make(chan struct{}),
+	}
+	m.workers[channelID] = worker
+	m.mu.Unlock()
+
+	go m.run(discord, channelID, worker.stopCh)
+	return m.stopFn(channelID)
+}
+
+func (m *TypingManager) stopFn(channelID string) func() {
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			m.Stop(channelID)
+		})
+	}
+}
+
+func (m *TypingManager) Stop(channelID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	worker, ok := m.workers[channelID]
+	if !ok {
+		return
+	}
+
+	worker.refCount--
+	if worker.refCount > 0 {
+		return
+	}
+
+	close(worker.stopCh)
+	delete(m.workers, channelID)
+}
+
+func (m *TypingManager) run(discord *discordgo.Session, channelID string, stopCh <-chan struct{}) {
+	_ = discord.ChannelTyping(channelID)
+
+	ticker := time.NewTicker(8 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stopCh:
+			return
+		case <-ticker.C:
+			_ = discord.ChannelTyping(channelID)
+		}
 	}
 }
 
@@ -121,6 +204,9 @@ func ParseGptMessage(discord *discordgo.Session, message *discordgo.MessageCreat
 }
 
 func generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
+	stopTyping := typingManager.Start(discord, message.ChannelID)
+	defer stopTyping()
+
 	conv, err := client.Conversations.New(ctx, conversations.ConversationNewParams{})
 	if err != nil {
 		fmt.Println("error generating response:", err)
@@ -138,6 +224,9 @@ func generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreat
 }
 
 func generateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
+	stopTyping := typingManager.Start(discord, message.ChannelID)
+	defer stopTyping()
+
 	refID := message.MessageReference.MessageID
 	convID, ok := conversationMap.GetConversationByRef(refID)
 	if !ok {
@@ -163,7 +252,7 @@ func generateGptResponse(message *discordgo.MessageCreate, client *openai.Client
 		role = "doctor"
 	}
 	combinedContent := ""
-	if message.MessageReference != nil && message.ReferencedMessage.Author.ID != config.GetConfig().App.BotID {
+	if message.ReferencedMessage != nil && message.ReferencedMessage.Author.ID != config.GetConfig().App.BotID {
 		targetUID = message.ReferencedMessage.Author.ID
 		combinedContent = fmt.Sprintf("[UID:%s][TARGET_UID:%s][TARGET_CONTEXT:%q] %s.", message.Author.ID, targetUID, message.ReferencedMessage.Content, message.Content)
 	} else {

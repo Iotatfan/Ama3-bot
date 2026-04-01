@@ -53,6 +53,16 @@ var (
 			})
 		},
 		"say": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			if !isOwnerInteraction(i) {
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "Ga boleh",
+					},
+				})
+
+				return
+			}
 
 			var inputString string
 			for _, opt := range i.ApplicationCommandData().Options {
@@ -77,7 +87,7 @@ var (
 			s.InteractionResponseDelete(i.Interaction)
 		},
 		"nick": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-			if i.Member.User.ID != config.GetConfig().App.OwnerID {
+			if !isOwnerInteraction(i) {
 				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseChannelMessageWithSource,
 					Data: &discordgo.InteractionResponseData{
@@ -112,6 +122,18 @@ var (
 		},
 	}
 )
+
+func isOwnerInteraction(i *discordgo.InteractionCreate) bool {
+	ownerID := config.GetConfig().App.OwnerID
+	switch {
+	case i.Member != nil && i.Member.User != nil:
+		return i.Member.User.ID == ownerID
+	case i.User != nil:
+		return i.User.ID == ownerID
+	default:
+		return false
+	}
+}
 
 func RegisterCommands(s *discordgo.Session) {
 	fmt.Println("Registering commands")
