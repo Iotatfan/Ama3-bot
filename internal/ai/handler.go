@@ -257,8 +257,6 @@ func calculateInterestScore(message *discordgo.MessageCreate, ctx context.Contex
 	interjectionPrompt := strings.Replace(config.GetConfig().AI.Prompts.InterestScore, "{{.Message}}", message.Content, 1)
 	interjectionPrompt = strings.Replace(interjectionPrompt, "{{.History}}", combinedContent, 1)
 
-	fmt.Println("Calculating interest score with prompt:", interjectionPrompt)
-
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{
 			OfString: openai.String(interjectionPrompt),
@@ -285,7 +283,6 @@ func handlePotentialInterjection(message *discordgo.MessageCreate, ctx context.C
 	score, interjectionMsg := calculateInterestScore(message, ctx, client, discord)
 
 	if score > float32(config.GetConfig().AI.Interest.InterestScoreThreshold) {
-		fmt.Println("Message has high interest score, processing as normal:", score)
 		return true, interjectionMsg
 	}
 
