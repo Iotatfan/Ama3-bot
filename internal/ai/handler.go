@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +35,7 @@ const (
 	IntentAskAbout          Intent = "ask_about_target"
 	IntentValidationRequest Intent = "validation_request"
 	IntentActionOnSelf      Intent = "action_on_self"
+	IntentInterjection      Intent = "interjection"
 	Unknown                 Intent = "unknown"
 )
 
@@ -236,13 +238,111 @@ func determineIntent(message *discordgo.MessageCreate, ctx context.Context, clie
 	}
 }
 
+func calculateInterestScore(message *discordgo.MessageCreate, ctx context.Context, client *openai.Client, discord *discordgo.Session) (float32, string) {
+	// Get past message for context, combine with current message, and feed into interest scoring prompt
+	combinedContent := ""
+	pastMessages, err := discord.ChannelMessages(message.ChannelID, config.GetConfig().AI.Interest.PastMessageLimit, "", "", "")
+	if err != nil {
+		fmt.Println("error fetching past messages for interest scoring:", err)
+		combinedContent = message.Content
+	} else {
+		for i := len(pastMessages) - 1; i >= 0; i-- {
+			m := pastMessages[i]
+			if m.ID == message.ID {
+				continue
+			}
+			combinedContent += fmt.Sprintf("[UID:%s] %s : %s\n", m.Author.ID, m.Author.Username, m.Content)
+		}
+	}
+	interjectionPrompt := strings.Replace(config.GetConfig().AI.Prompts.InterestScore, "{{.Message}}", message.Content, 1)
+	interjectionPrompt = strings.Replace(interjectionPrompt, "{{.History}}", combinedContent, 1)
+
+	fmt.Println("Calculating interest score with prompt:", interjectionPrompt)
+
+	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
+		Input: responses.ResponseNewParamsInputUnion{
+			OfString: openai.String(interjectionPrompt),
+		},
+		Model: openai.ChatModelGPT5_4Mini,
+	})
+	if err != nil {
+		fmt.Println("error calculating interest score:", err)
+		return 0, ""
+	}
+
+	score, err := strconv.ParseFloat(resp.OutputText(), 32)
+	if err != nil {
+		fmt.Println("error parsing interest score:", err)
+		return 0, ""
+	}
+
+	fmt.Println("Calculated interest score:", score)
+
+	return float32(score), combinedContent
+}
+
+func handlePotentialInterjection(message *discordgo.MessageCreate, ctx context.Context, client *openai.Client, discord *discordgo.Session) (bool, string) {
+	score, interjectionMsg := calculateInterestScore(message, ctx, client, discord)
+
+	if score > float32(config.GetConfig().AI.Interest.InterestScoreThreshold) {
+		fmt.Println("Message has high interest score, processing as normal:", score)
+		return true, interjectionMsg
+	}
+
+	return false, ""
+}
+
+var channelCooldownMap = struct {
+	mu         sync.RWMutex
+	lastActive map[string]time.Time
+}{
+	lastActive: make(map[string]time.Time),
+}
+
+func isNotCooldown(channelId string) bool {
+	// Check if any conversation has been active in the channel in the last cooldown period
+	cooldown := time.Duration(config.GetConfig().AI.Interest.CooldownSeconds) * time.Second
+	now := time.Now()
+
+	channelCooldownMap.mu.RLock()
+	defer channelCooldownMap.mu.RUnlock()
+
+	lastActive, ok := channelCooldownMap.lastActive[channelId]
+	if !ok {
+		return true
+	}
+
+	return now.Sub(lastActive) > cooldown
+}
+
+func updateChannelActivity(channelID string) {
+	channelCooldownMap.mu.Lock()
+	defer channelCooldownMap.mu.Unlock()
+
+	channelCooldownMap.lastActive[channelID] = time.Now()
+}
+
 func ParseMessage(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
 	if message.Author.ID == config.GetConfig().App.BotID || message.Author.Bot {
 		fmt.Println("SKIP")
 		return
 	}
 
-	if !isBotMentioned(message) && !isReplyToBot(discord, message) {
+	if !isBotMentioned(message) && !isReplyToBot(discord, message) && config.GetConfig().AI.Interest.EnableInterestDetection {
+		if !isNotCooldown(message.ChannelID) {
+			fmt.Println("Channel is in cooldown, skipping interest check")
+			return
+		}
+
+		shouldHandle, history := handlePotentialInterjection(message, ctx, client, discord)
+		if shouldHandle {
+			updateChannelActivity(message.ChannelID)
+
+			fmt.Println("Message is not directed at bot and has high interest score, generating interjection response...")
+			generateNewChat(discord, message, client, ctx, IntentInterjection, history)
+			return
+		}
+		fmt.Println("Message is not directed at bot and has low interest score, skipping...")
 		return
 	}
 
@@ -261,10 +361,10 @@ func ParseMessage(discord *discordgo.Session, message *discordgo.MessageCreate, 
 
 	fmt.Println("Could not find conversation for reference message")
 	fmt.Println("Generating new chat...")
-	generateNewChat(discord, message, client, ctx, intent)
+	generateNewChat(discord, message, client, ctx, intent, "")
 }
 
-func generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent) {
+func generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string) {
 	stopTyping := typingManager.Start(discord, message.ChannelID)
 	defer stopTyping()
 
@@ -274,7 +374,7 @@ func generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreat
 		return
 	}
 
-	resp, replyTarget, err := generateAIResponse(message, client, ctx, conv.ID, intent)
+	resp, replyTarget, err := generateAIResponse(message, client, ctx, conv.ID, intent, history)
 
 	if err != nil {
 		fmt.Println("error generating response:", err)
@@ -296,7 +396,7 @@ func generateFollowUpChat(discord *discordgo.Session, message *discordgo.Message
 	}
 	fmt.Println("Generating follow-up chat for conversation ID:", convID)
 
-	resp, replyTarget, err := generateAIResponse(message, client, ctx, convID, intent)
+	resp, replyTarget, err := generateAIResponse(message, client, ctx, convID, intent, "")
 
 	if err != nil {
 		fmt.Println(err)
@@ -306,7 +406,7 @@ func generateFollowUpChat(discord *discordgo.Session, message *discordgo.Message
 	sendReplyMessage(discord, message, resp.OutputText(), replyTarget, convID)
 }
 
-func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, convID string, intent Intent) (*responses.Response, *discordgo.MessageReference, error) {
+func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, convID string, intent Intent, history string) (*responses.Response, *discordgo.MessageReference, error) {
 	targetUID := "none"
 	role := "external"
 	combinedContent := ""
@@ -332,6 +432,10 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 		combinedContent = fmt.Sprintf("[INTENT:%s][UID:%s][ROLE:%s][TARGET_UID:%s][TARGET_CONTEXT:%s] %s.", intent, message.Author.ID, role, targetUID, refMsg.Content, message.Content)
 	} else {
 		combinedContent = fmt.Sprintf("[INTENT:%s][UID:%s][ROLE:%s] %s", intent, message.Author.ID, role, message.Content)
+	}
+
+	if history != "" {
+		combinedContent = fmt.Sprintf("%s\n[CONVERSATION HISTORY]\n%s", combinedContent, history)
 	}
 
 	userContent := []responses.ResponseInputContentUnionParam{

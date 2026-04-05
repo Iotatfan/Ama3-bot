@@ -34,16 +34,25 @@ type ReplacementConfig struct {
 	Instagram string `mapstructure:"instagram" yaml:"instagram"`
 }
 
+type InterestConfig struct {
+	InterestScoreThreshold  float64 `mapstructure:"interest_score_threshold" yaml:"interest_score_threshold"`
+	PastMessageLimit        int     `mapstructure:"past_message_limit" yaml:"past_message_limit"`
+	CooldownSeconds         int     `mapstructure:"cooldown_seconds" yaml:"cooldown_seconds"`
+	EnableInterestDetection bool    `mapstructure:"enable_interest_detection" yaml:"enable_interest_detection"`
+}
+
 type AIConfig struct {
-	Prompts PromptConfig `mapstructure:"prompts" yaml:"prompts"`
+	Prompts  PromptConfig   `mapstructure:"prompts" yaml:"prompts"`
+	Interest InterestConfig `mapstructure:"interest" yaml:"interest"`
 }
 
 type PromptConfig struct {
-	System       string `mapstructure:"system" yaml:"system"`
-	IdentityRule string `mapstructure:"identity_rule" yaml:"identity_rule"`
-	Developer    string `mapstructure:"developer" yaml:"developer"`
-	Intent       string `mapstructure:"intent" yaml:"intent"`
-	IntentReply  string `mapstructure:"intent_reply" yaml:"intent_reply"`
+	System        string `mapstructure:"system" yaml:"system"`
+	IdentityRule  string `mapstructure:"identity_rule" yaml:"identity_rule"`
+	Developer     string `mapstructure:"developer" yaml:"developer"`
+	Intent        string `mapstructure:"intent" yaml:"intent"`
+	IntentReply   string `mapstructure:"intent_reply" yaml:"intent_reply"`
+	InterestScore string `mapstructure:"interest_score" yaml:"interest_score"`
 }
 
 var Cfg *Config
