@@ -215,7 +215,7 @@ func determineIntent(message *discordgo.MessageCreate, ctx context.Context, clie
 		Input: responses.ResponseNewParamsInputUnion{
 			OfString: openai.String(intentPrompt),
 		},
-		Model: openai.ChatModelGPT5_4Nano,
+		Model: openai.ChatModelGPT5_4Mini,
 	})
 	if err != nil {
 		fmt.Println("error determining intent:", err)
@@ -262,7 +262,7 @@ func calculateInterestScore(message *discordgo.MessageCreate, ctx context.Contex
 		Input: responses.ResponseNewParamsInputUnion{
 			OfString: openai.String(interjectionPrompt),
 		},
-		Model: openai.ChatModelGPT5_4Mini,
+		Model: openai.ChatModelGPT5_4Nano,
 	})
 	if err != nil {
 		fmt.Println("error calculating interest score:", err)
@@ -337,7 +337,10 @@ func ParseMessage(discord *discordgo.Session, message *discordgo.MessageCreate, 
 			updateChannelActivity(message.ChannelID)
 
 			fmt.Println("Message is not directed at bot and has high interest score, generating interjection response...")
-			generateNewChat(discord, message, client, ctx, IntentInterjection, history)
+			message.Content = stripBotMention(message.Content)
+			intent := determineIntent(message, ctx, client, false)
+
+			generateNewChat(discord, message, client, ctx, intent, history)
 			return
 		}
 		fmt.Println("Message is not directed at bot and has low interest score, skipping...")
