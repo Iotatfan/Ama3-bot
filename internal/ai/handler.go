@@ -256,6 +256,7 @@ func calculateInterestScore(message *discordgo.MessageCreate, ctx context.Contex
 	}
 	interjectionPrompt := strings.Replace(config.GetConfig().AI.Prompts.InterestScore, "{{.Message}}", message.Content, 1)
 	interjectionPrompt = strings.Replace(interjectionPrompt, "{{.History}}", combinedContent, 1)
+	interjectionPrompt = strings.Replace(interjectionPrompt, "{{.OwnerID}}", config.GetConfig().App.OwnerID, 1)
 
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{
