@@ -274,7 +274,7 @@ func calculateInterestScore(message *discordgo.MessageCreate, ctx context.Contex
 		Input: responses.ResponseNewParamsInputUnion{
 			OfString: openai.String(interjectionPrompt),
 		},
-		Model: openai.ChatModelGPT5_4Nano,
+		Model: openai.ChatModelGPT5_4Mini,
 	})
 	if err != nil {
 		fmt.Println("error calculating interest score:", err)
