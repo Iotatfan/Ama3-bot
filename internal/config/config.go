@@ -26,10 +26,12 @@ type AuthConfig struct {
 }
 
 type PlatformConfig struct {
-	Replacements ReplacementConfig `mapstructure:"replacements" yaml:"replacements"`
+	BlacklistGuilds []string          `mapstructure:"blacklist_guilds" yaml:"blacklist_guilds"`
+	Replacements    ReplacementConfig `mapstructure:"replacements" yaml:"replacements"`
 }
 
 type ReplacementConfig struct {
+	Enabled   bool   `mapstructure:"enabled" yaml:"enabled"`
 	Twitter   string `mapstructure:"twitter" yaml:"twitter"`
 	Instagram string `mapstructure:"instagram" yaml:"instagram"`
 }

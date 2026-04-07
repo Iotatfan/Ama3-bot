@@ -10,7 +10,7 @@ import (
 	aiHandler "github.com/iotatfan/sora-go/internal/ai"
 	"github.com/iotatfan/sora-go/internal/commands"
 	"github.com/iotatfan/sora-go/internal/config"
-	urlParser "github.com/iotatfan/sora-go/internal/parser"
+	urlReplaceHandler "github.com/iotatfan/sora-go/internal/url_replace"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 )
@@ -36,7 +36,7 @@ func main() {
 	discord.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		aiHandler.ParseMessage(s, m, &aiClient, ctx)
 	})
-	discord.AddHandler(urlParser.ParseUrl)
+	discord.AddHandler(urlReplaceHandler.ParseUrl)
 	commands.RegisterCommands(discord)
 
 	if err := discord.Open(); err != nil {
