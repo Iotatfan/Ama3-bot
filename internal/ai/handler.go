@@ -225,6 +225,7 @@ func determineIntent(message *discordgo.MessageCreate, ctx context.Context, clie
 	}
 
 	cleanOutput := strings.ToLower(strings.TrimSpace(resp.OutputText()))
+	fmt.Println("Determined intent:", cleanOutput)
 	// Parse the intent from the AI response
 	switch cleanOutput {
 	case "direct":
@@ -235,6 +236,10 @@ func determineIntent(message *discordgo.MessageCreate, ctx context.Context, clie
 		return IntentAskAbout
 	case "validation_request":
 		return IntentValidationRequest
+	case "action_on_self":
+		return IntentActionOnSelf
+	case "interjection":
+		return IntentInterjection
 	default:
 		return Unknown
 	}
@@ -243,7 +248,7 @@ func determineIntent(message *discordgo.MessageCreate, ctx context.Context, clie
 func getMessageHistory(discord *discordgo.Session, message *discordgo.MessageCreate, limit int) (string, error) {
 	// Get past message for context, combine with current message, and feed into interest scoring prompt
 	var builder strings.Builder
-	pastMessages, err := discord.ChannelMessages(message.ChannelID, config.GetConfig().AI.Interest.PastMessageLimit, "", "", "")
+	pastMessages, err := discord.ChannelMessages(message.ChannelID, limit, "", "", "")
 	if err != nil {
 		fmt.Println("error fetching past messages for interest scoring:", err)
 		builder.WriteString(message.Content)
@@ -256,7 +261,13 @@ func getMessageHistory(discord *discordgo.Session, message *discordgo.MessageCre
 				continue
 			}
 
-			builder.WriteString(fmt.Sprintf("[UID:%s] %s : %s\n", m.Author.ID, m.Author.Username, m.Content))
+			if m.Content == "" && m.Embeds != nil && len(m.Embeds) > 0 {
+				builder.WriteString(fmt.Sprintf("[UID:%s] %s : [EMBED: %s]\n", m.Author.ID, m.Author.Username, m.Embeds[0].Description))
+				// } else if m.Content == "" && m.Attachments != nil && len(m.Attachments) > 0 {
+				// 	builder.WriteString(fmt.Sprintf("[UID:%s] %s : [ATTACHMENT: %s]\n", m.Author.ID, m.Author.Username, m.Attachments[0].URL))
+			} else {
+				builder.WriteString(fmt.Sprintf("[UID:%s] %s : %s\n", m.Author.ID, m.Author.Username, m.Content))
+			}
 		}
 	}
 
@@ -338,9 +349,10 @@ func updateChannelActivity(channelID string) {
 
 func ParseMessage(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
 	if message.Author.ID == config.GetConfig().App.BotID || message.Author.Bot {
-		fmt.Println("SKIP")
 		return
 	}
+
+	fmt.Printf("Received message: [%s] %s\n", message.Author.Username, message.Content)
 
 	if !isBotMentioned(message) && !isReplyToBot(discord, message) && config.GetConfig().AI.Interest.EnableInterestDetection {
 		if !isNotCooldown(message.ChannelID) {
@@ -354,9 +366,8 @@ func ParseMessage(discord *discordgo.Session, message *discordgo.MessageCreate, 
 
 			fmt.Println("Message is not directed at bot and has high interest score, generating interjection response...")
 			message.Content = stripBotMention(message.Content)
-			intent := determineIntent(message, ctx, client, false, history)
 
-			generateNewChat(discord, message, client, ctx, intent, history)
+			generateNewChat(discord, message, client, ctx, IntentInterjection, history)
 			return
 		}
 		fmt.Println("Message is not directed at bot and has low interest score, skipping...")
@@ -368,7 +379,6 @@ func ParseMessage(discord *discordgo.Session, message *discordgo.MessageCreate, 
 	message.Content = stripBotMention(message.Content)
 	intent := determineIntent(message, ctx, client, message.ReferencedMessage != nil, history)
 
-	fmt.Println("Ref:", message.MessageReference)
 	if message.MessageReference != nil && message.ReferencedMessage != nil && message.ReferencedMessage.Author.ID == config.GetConfig().App.BotID {
 		convID, ok := conversationMap.GetConversationByRef(message.MessageReference.MessageID)
 		if ok {
@@ -433,30 +443,26 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 	}
 
 	targetUID := "none"
-	role := "external"
+	targetRole := "external"
+	senderRole := "external"
 	combinedContent := ""
 	replyTarget := message.Reference()
 	refMsg := message.ReferencedMessage
 
-	isReplyToExternal := intent == IntentReplyToTarget &&
-		refMsg != nil &&
-		refMsg.Author.ID != config.GetConfig().App.OwnerID
-	isOwnerMessage := message.Author.ID == config.GetConfig().App.OwnerID
-
-	if isOwnerMessage {
-		role = "doctor"
+	if message.Author.ID == config.GetConfig().App.OwnerID {
+		senderRole = "doctor"
 	}
 
-	if isReplyToExternal {
-		role = "doctor"
+	if refMsg != nil && refMsg.Author.ID == config.GetConfig().App.OwnerID {
+		targetRole = "doctor"
 		replyTarget = refMsg.Reference()
 	}
 
 	if refMsg != nil && refMsg.Author.ID != config.GetConfig().App.BotID {
 		targetUID = refMsg.Author.ID
-		combinedContent = fmt.Sprintf("[INTENT:%s][UID:%s][ROLE:%s][TARGET_UID:%s][TARGET_CONTEXT:%s] %s.", intent, message.Author.ID, role, targetUID, refMsg.Content, message.Content)
+		combinedContent = fmt.Sprintf("[INTENT:%s][UID:%s][SENDER_ROLE:%s][TARGET_UID:%s][TARGET_CONTEXT:%s][TARGET_ROLE:%s] %s.", intent, message.Author.ID, senderRole, targetUID, refMsg.Content, targetRole, message.Content)
 	} else {
-		combinedContent = fmt.Sprintf("[INTENT:%s][UID:%s][ROLE:%s] %s", intent, message.Author.ID, role, message.Content)
+		combinedContent = fmt.Sprintf("[INTENT:%s][UID:%s][SENDER_ROLE:%s] %s", intent, message.Author.ID, senderRole, message.Content)
 	}
 
 	if history != "" {
@@ -471,8 +477,6 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 		},
 	}
 
-	fmt.Println(userContent[0].OfInputText.Text)
-
 	if message.Attachments != nil || (message.ReferencedMessage != nil && message.ReferencedMessage.Attachments != nil) {
 		attachments := message.Attachments
 		if message.ReferencedMessage != nil {
@@ -481,7 +485,6 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 
 		for _, att := range attachments {
 			if strings.HasPrefix(att.ContentType, "image/") {
-				fmt.Println("Adding attachment URL to input:", att.URL)
 				userContent = append(userContent, responses.ResponseInputContentUnionParam{
 					OfInputImage: &responses.ResponseInputImageParam{
 						ImageURL: openai.String(att.URL),
