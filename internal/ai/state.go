@@ -8,10 +8,14 @@ import (
 	"github.com/iotatfan/sora-go/internal/config"
 )
 
-// In-memory mapping of conversation IDs to Discord message IDs.
-// This is used to keep track of which AI conversation corresponds to which Discord message.
-var conversationMap = NewConversationMap()
-var typingManager = NewTypingManager()
+var defaultAIHandler = NewAIHandler()
+
+type AIHandler struct {
+	conversationMap *ConversationMap
+	typingManager   *TypingManager
+	channelCooldown channelCooldownTracker
+	directLimiter   directFlowLimiter
+}
 
 type ConversationMap struct {
 	mu        sync.RWMutex
@@ -34,20 +38,29 @@ type TypingManager struct {
 	workers map[string]*typingWorker
 }
 
-var channelCooldownMap = struct {
+type channelCooldownTracker struct {
 	mu         sync.RWMutex
 	lastActive map[string]time.Time
-}{
-	lastActive: make(map[string]time.Time),
 }
 
-var directFlowLimiter = struct {
+type directFlowLimiter struct {
 	mu          sync.Mutex
 	userLastReq map[string]time.Time
 	chanLastReq map[string]time.Time
-}{
-	userLastReq: make(map[string]time.Time),
-	chanLastReq: make(map[string]time.Time),
+}
+
+func NewAIHandler() *AIHandler {
+	return &AIHandler{
+		conversationMap: NewConversationMap(),
+		typingManager:   NewTypingManager(),
+		channelCooldown: channelCooldownTracker{
+			lastActive: make(map[string]time.Time),
+		},
+		directLimiter: directFlowLimiter{
+			userLastReq: make(map[string]time.Time),
+			chanLastReq: make(map[string]time.Time),
+		},
+	}
 }
 
 func NewConversationMap() *ConversationMap {
@@ -232,15 +245,15 @@ func maxDirectLimiterEntries() int {
 	return limit
 }
 
-func isNotCooldown(channelID string) bool {
+func (h *AIHandler) isNotCooldown(channelID string) bool {
 	// Check if any conversation has been active in the channel in the last cooldown period.
 	cooldown := time.Duration(config.GetConfig().AI.Interest.CooldownSeconds) * time.Second
 	now := time.Now()
 
-	channelCooldownMap.mu.RLock()
-	defer channelCooldownMap.mu.RUnlock()
+	h.channelCooldown.mu.RLock()
+	defer h.channelCooldown.mu.RUnlock()
 
-	lastActive, ok := channelCooldownMap.lastActive[channelID]
+	lastActive, ok := h.channelCooldown.lastActive[channelID]
 	if !ok {
 		return true
 	}
@@ -248,42 +261,42 @@ func isNotCooldown(channelID string) bool {
 	return now.Sub(lastActive) > cooldown
 }
 
-func updateChannelActivity(channelID string) {
-	channelCooldownMap.mu.Lock()
-	defer channelCooldownMap.mu.Unlock()
+func (h *AIHandler) updateChannelActivity(channelID string) {
+	h.channelCooldown.mu.Lock()
+	defer h.channelCooldown.mu.Unlock()
 
-	if len(channelCooldownMap.lastActive) > 1000 {
-		channelCooldownMap.lastActive = make(map[string]time.Time)
+	if len(h.channelCooldown.lastActive) > 1000 {
+		h.channelCooldown.lastActive = make(map[string]time.Time)
 	}
 
-	channelCooldownMap.lastActive[channelID] = time.Now()
+	h.channelCooldown.lastActive[channelID] = time.Now()
 }
 
-func allowDirectFlow(userID, channelID string) bool {
+func (h *AIHandler) allowDirectFlow(userID, channelID string) bool {
 	if !config.GetConfig().AI.Runtime.EnableDirectThrottle {
 		return true
 	}
 
 	now := time.Now()
 
-	directFlowLimiter.mu.Lock()
-	defer directFlowLimiter.mu.Unlock()
+	h.directLimiter.mu.Lock()
+	defer h.directLimiter.mu.Unlock()
 
-	if len(directFlowLimiter.userLastReq) > maxDirectLimiterEntries() {
-		directFlowLimiter.userLastReq = make(map[string]time.Time)
+	if len(h.directLimiter.userLastReq) > maxDirectLimiterEntries() {
+		h.directLimiter.userLastReq = make(map[string]time.Time)
 	}
-	if len(directFlowLimiter.chanLastReq) > maxDirectLimiterEntries() {
-		directFlowLimiter.chanLastReq = make(map[string]time.Time)
+	if len(h.directLimiter.chanLastReq) > maxDirectLimiterEntries() {
+		h.directLimiter.chanLastReq = make(map[string]time.Time)
 	}
 
-	if last, ok := directFlowLimiter.userLastReq[userID]; ok && now.Sub(last) < directFlowUserCooldown() {
+	if last, ok := h.directLimiter.userLastReq[userID]; ok && now.Sub(last) < directFlowUserCooldown() {
 		return false
 	}
-	if last, ok := directFlowLimiter.chanLastReq[channelID]; ok && now.Sub(last) < directFlowChanCooldown() {
+	if last, ok := h.directLimiter.chanLastReq[channelID]; ok && now.Sub(last) < directFlowChanCooldown() {
 		return false
 	}
 
-	directFlowLimiter.userLastReq[userID] = now
-	directFlowLimiter.chanLastReq[channelID] = now
+	h.directLimiter.userLastReq[userID] = now
+	h.directLimiter.chanLastReq[channelID] = now
 	return true
 }

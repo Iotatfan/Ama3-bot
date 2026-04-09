@@ -14,8 +14,8 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 )
 
-func generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string) {
-	stopTyping := typingManager.Start(discord, message.ChannelID)
+func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string) {
+	stopTyping := h.typingManager.Start(discord, message.ChannelID)
 	defer stopTyping()
 
 	conv, err := client.Conversations.New(ctx, conversations.ConversationNewParams{})
@@ -30,15 +30,15 @@ func generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreat
 		return
 	}
 
-	sendReplyMessage(discord, message, resp.OutputText(), replyTarget, conv.ID)
+	h.sendReplyMessage(discord, message, resp.OutputText(), replyTarget, conv.ID)
 }
 
-func generateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string) {
-	stopTyping := typingManager.Start(discord, message.ChannelID)
+func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string) {
+	stopTyping := h.typingManager.Start(discord, message.ChannelID)
 	defer stopTyping()
 
 	refID := message.MessageReference.MessageID
-	convID, ok := conversationMap.GetConversationByRef(refID)
+	convID, ok := h.conversationMap.GetConversationByRef(refID)
 	if !ok {
 		// fallback: go to generate new chat flow
 		return
@@ -51,7 +51,7 @@ func generateFollowUpChat(discord *discordgo.Session, message *discordgo.Message
 		return
 	}
 
-	sendReplyMessage(discord, message, resp.OutputText(), replyTarget, convID)
+	h.sendReplyMessage(discord, message, resp.OutputText(), replyTarget, convID)
 }
 
 func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, convID string, intent Intent, history string) (*responses.Response, *discordgo.MessageReference, error) {
@@ -239,7 +239,7 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 	return nil, nil, err
 }
 
-func sendReplyMessage(discord *discordgo.Session, message *discordgo.MessageCreate, content string, replyTarget *discordgo.MessageReference, convID string) {
+func (h *AIHandler) sendReplyMessage(discord *discordgo.Session, message *discordgo.MessageCreate, content string, replyTarget *discordgo.MessageReference, convID string) {
 	// Discord has a message character limit of 2000, so split long responses.
 	if len(content) > 2000 {
 		chunks := smartSentenceChunk(content, 2000)
@@ -253,7 +253,7 @@ func sendReplyMessage(discord *discordgo.Session, message *discordgo.MessageCrea
 			}
 
 			msgRef = sent.Reference()
-			conversationMap.Set(convID, sent.ID)
+			h.conversationMap.Set(convID, sent.ID)
 			time.Sleep(300 * time.Millisecond)
 		}
 		return
@@ -264,7 +264,7 @@ func sendReplyMessage(discord *discordgo.Session, message *discordgo.MessageCrea
 		fmt.Println(err)
 		return
 	}
-	conversationMap.Set(convID, sent.ID)
+	h.conversationMap.Set(convID, sent.ID)
 }
 
 func smartSentenceChunk(text string, limit int) []string {
