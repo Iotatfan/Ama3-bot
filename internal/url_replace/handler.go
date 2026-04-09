@@ -12,65 +12,168 @@ import (
 var (
 	twitterRegex = regexp.MustCompile(`\bhttps?:\/\/(?:www\.)?(twitter\.com|x\.com)\/[^\/\s]+\/status\/\d+`)
 	instaRegex   = regexp.MustCompile(`\bhttps?:\/\/(?:www\.)?(instagram\.com)\/(?:p|reel)\/[a-zA-Z0-9_-]+`)
+
+	defaultURLReplaceHandler = NewURLReplaceHandler()
 )
 
-type Post struct {
-	Message       string
-	ShouldFix     bool
-	SkipNextCheck bool
+type urlReplacementRule struct {
+	name        string
+	pattern     *regexp.Regexp
+	replacement func(cfg *config.Config) string
+}
+
+type URLReplaceHandler struct {
+	getConfig func() *config.Config
+	rules     []urlReplacementRule
 }
 
 func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
-	if !config.GetConfig().Platform.Replacements.Enabled {
+	defaultURLReplaceHandler.ParseUrl(discord, message)
+}
+
+func NewURLReplaceHandler() *URLReplaceHandler {
+	return NewURLReplaceHandlerWithConfig(config.GetConfig)
+}
+
+func NewURLReplaceHandlerWithConfig(getConfig func() *config.Config) *URLReplaceHandler {
+	if getConfig == nil {
+		getConfig = config.GetConfig
+	}
+
+	h := &URLReplaceHandler{
+		getConfig: getConfig,
+	}
+
+	h.rules = []urlReplacementRule{
+		{
+			name:    "twitter",
+			pattern: twitterRegex,
+			replacement: func(cfg *config.Config) string {
+				if cfg == nil {
+					return ""
+				}
+				return cfg.Platform.Replacements.Twitter
+			},
+		},
+		{
+			name:    "instagram",
+			pattern: instaRegex,
+			replacement: func(cfg *config.Config) string {
+				if cfg == nil {
+					return ""
+				}
+				return cfg.Platform.Replacements.Instagram
+			},
+		},
+	}
+
+	return h
+}
+
+func (h *URLReplaceHandler) ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
+	cfg := h.getConfig()
+	if !h.shouldProcessMessage(cfg, message) {
 		return
 	}
 
-	if message == nil {
+	authorID := "unknown"
+	if message.Author != nil {
+		authorID = message.Author.ID
+	}
+	fmt.Printf("URL replace check user_id=%s channel_id=%s len=%d\n", authorID, message.ChannelID, len(message.Content))
+
+	replies := h.buildReplacementReplies(message.Content, cfg)
+	if len(replies) == 0 {
 		return
 	}
 
-	if message.Author != nil && (message.Author.ID == config.GetConfig().App.BotID || message.Author.Bot) {
-		return
+	replyMessage := strings.Join(replies, "\n")
+	if _, err := discord.ChannelMessageSendReply(message.ChannelID, replyMessage, message.Reference()); err != nil {
+		fmt.Println("Error sending reply:", err)
 	}
 
-	if message.GuildID != "" && contains(config.GetConfig().Platform.BlacklistGuilds, message.GuildID) {
-		return
+	if err := h.suppressEmbeds(discord, message); err != nil {
+		fmt.Println("Error suppressing embeds:", err)
+	}
+}
+
+func (h *URLReplaceHandler) shouldProcessMessage(cfg *config.Config, message *discordgo.MessageCreate) bool {
+	if cfg == nil || message == nil {
+		return false
 	}
 
-	fmt.Printf("URL replace check user_id=%s channel_id=%s len=%d\n", message.Author.ID, message.ChannelID, len(message.Content))
+	if !cfg.Platform.Replacements.Enabled {
+		return false
+	}
 
-	lines := strings.Split(message.Content, "\n")
-	var allReplies []string
+	if message.Author != nil && (message.Author.ID == cfg.App.BotID || message.Author.Bot) {
+		return false
+	}
+
+	if message.GuildID != "" && contains(cfg.Platform.BlacklistGuilds, message.GuildID) {
+		return false
+	}
+
+	return true
+}
+
+func (h *URLReplaceHandler) buildReplacementReplies(content string, cfg *config.Config) []string {
+	if strings.TrimSpace(content) == "" {
+		return nil
+	}
+
+	lines := strings.Split(content, "\n")
+	replies := make([]string, 0)
 
 	for _, line := range lines {
-		// Check Twitter
-		if twitterPost := findAndReplace(line, twitterRegex, config.GetConfig().Platform.Replacements.Twitter); twitterPost.ShouldFix {
-			allReplies = append(allReplies, twitterPost.Message)
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
 		}
-		// Check Instagram
-		if instaPost := findAndReplace(line, instaRegex, config.GetConfig().Platform.Replacements.Instagram); instaPost.ShouldFix {
-			allReplies = append(allReplies, instaPost.Message)
+
+		for _, rule := range h.rules {
+			replies = append(replies, h.applyRule(line, rule, cfg)...)
 		}
 	}
 
-	if len(allReplies) > 0 {
-		replyMessage := strings.Join(allReplies, "\n")
+	return replies
+}
 
-		_, err := discord.ChannelMessageSendReply(message.ChannelID, replyMessage, message.Reference())
-		if err != nil {
-			fmt.Println("Error sending reply:", err)
-		}
-
-		// Suppress original embeds
-		_, err = discord.ChannelMessageEditComplex(&discordgo.MessageEdit{
-			ID:      message.ID,
-			Channel: message.ChannelID,
-			Flags:   discordgo.MessageFlagsSuppressEmbeds,
-		})
-		if err != nil {
-			fmt.Println("Error suppressing embeds:", err)
-		}
+func (h *URLReplaceHandler) applyRule(input string, rule urlReplacementRule, cfg *config.Config) []string {
+	if rule.pattern == nil || rule.replacement == nil {
+		return nil
 	}
+
+	replacementHost := strings.TrimSpace(rule.replacement(cfg))
+	if replacementHost == "" {
+		fmt.Printf("URL replacement skipped rule=%s because replacement host is empty\n", rule.name)
+		return nil
+	}
+
+	matches := rule.pattern.FindAllStringSubmatch(input, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	fixedURLs := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		fixedURLs = append(fixedURLs, strings.Replace(match[0], match[1], replacementHost, 1))
+	}
+
+	return fixedURLs
+}
+
+func (h *URLReplaceHandler) suppressEmbeds(discord *discordgo.Session, message *discordgo.MessageCreate) error {
+	_, err := discord.ChannelMessageEditComplex(&discordgo.MessageEdit{
+		ID:      message.ID,
+		Channel: message.ChannelID,
+		Flags:   discordgo.MessageFlagsSuppressEmbeds,
+	})
+
+	return err
 }
 
 func contains(slice []string, item string) bool {
@@ -80,24 +183,4 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
-}
-
-func findAndReplace(input string, re *regexp.Regexp, replacement string) Post {
-	matches := re.FindAllStringSubmatch(input, -1)
-	if len(matches) == 0 {
-		return Post{Message: input, ShouldFix: false}
-	}
-
-	var builder strings.Builder
-	for i, match := range matches {
-		if i > 0 {
-			builder.WriteString("\n")
-		}
-		builder.WriteString(strings.Replace(match[0], match[1], replacement, 1))
-	}
-
-	return Post{
-		Message:   builder.String(),
-		ShouldFix: true,
-	}
 }

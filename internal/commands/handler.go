@@ -7,124 +7,223 @@ import (
 	"github.com/iotatfan/sora-go/internal/config"
 )
 
-var (
-	// integerOptionMinValue          = 1.0
-	// dmPermission                   = false
-	// defaultMemberPermissions int64 = discordgo.PermissionManageServer
+var defaultCommandsHandler = NewCommandsHandler()
 
-	commands = []*discordgo.ApplicationCommand{
+type commandHandler func(s *discordgo.Session, i *discordgo.InteractionCreate)
+
+type commandRegistration struct {
+	command *discordgo.ApplicationCommand
+	handler commandHandler
+}
+
+type CommandsHandler struct {
+	getConfig     func() *config.Config
+	registrations []commandRegistration
+}
+
+func RegisterCommands(s *discordgo.Session) {
+	defaultCommandsHandler.RegisterCommands(s)
+}
+
+func NewCommandsHandler() *CommandsHandler {
+	return NewCommandsHandlerWithConfig(config.GetConfig)
+}
+
+func NewCommandsHandlerWithConfig(getConfig func() *config.Config) *CommandsHandler {
+	if getConfig == nil {
+		getConfig = config.GetConfig
+	}
+
+	h := &CommandsHandler{
+		getConfig: getConfig,
+	}
+
+	h.registrations = []commandRegistration{
 		{
-			Name:        "help",
-			Description: "Get help about how to use me",
+			command: &discordgo.ApplicationCommand{
+				Name:        "help",
+				Description: "Get help about how to use me",
+			},
+			handler: h.handleHelp,
 		},
 		{
-			Name:        "say",
-			Description: "Send message as Ama3",
-			Options: []*discordgo.ApplicationCommandOption{
-				{
-					Type:        discordgo.ApplicationCommandOptionString,
-					Name:        "message",
-					Description: "The message to echo.",
+			command: &discordgo.ApplicationCommand{
+				Name:        "say",
+				Description: "*Warning. Send message as Ama3",
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Type:        discordgo.ApplicationCommandOptionString,
+						Name:        "message",
+						Description: "The message to echo.",
+						Required:    true,
+					},
 				},
 			},
+			handler: h.handleSay,
 		},
 		{
-			Name:        "nick",
-			Description: "*Warning. Change bot's nickname",
-			Options: []*discordgo.ApplicationCommandOption{
-				{
-					Type:        discordgo.ApplicationCommandOptionString,
-					Name:        "nick",
-					Description: "New nickname",
-					Required:    true, // Make the text input required
+			command: &discordgo.ApplicationCommand{
+				Name:        "nick",
+				Description: "*Warning. Change bot's nickname",
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Type:        discordgo.ApplicationCommandOptionString,
+						Name:        "nick",
+						Description: "New nickname",
+						Required:    true,
+					},
 				},
 			},
+			handler: h.handleNick,
 		},
 	}
 
-	commandHandlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
-		"help": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	return h
+}
 
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: "Please @Me to chat with me! I can also respond to messages that reply to my messages. Sometimes I will change the link in Twitter and Instagram messages to something else ehe~. I'm a Goldfish so I may forget the context of our conversation anytime soon.",
-				},
-			})
-		},
-		"say": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-			if !isOwnerInteraction(i) {
-				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-					Type: discordgo.InteractionResponseChannelMessageWithSource,
-					Data: &discordgo.InteractionResponseData{
-						Content: "Ga boleh",
-					},
-				})
+func (h *CommandsHandler) RegisterCommands(s *discordgo.Session) {
+	fmt.Println("Registering commands")
 
-				return
-			}
-
-			var inputString string
-			for _, opt := range i.ApplicationCommandData().Options {
-				if opt.Name == "message" {
-					inputString = opt.StringValue() // Retrieve the string value
-					break
-				}
-			}
-
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: "",
-				},
-			})
-
-			_, err := s.ChannelMessageSend(i.ChannelID, inputString)
-			if err != nil {
-				fmt.Println(err)
-			}
-
-			s.InteractionResponseDelete(i.Interaction)
-		},
-		"nick": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-			if !isOwnerInteraction(i) {
-				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-					Type: discordgo.InteractionResponseChannelMessageWithSource,
-					Data: &discordgo.InteractionResponseData{
-						Content: "Ga boleh",
-					},
-				})
-
-				return
-			}
-
-			var inputString string
-			for _, opt := range i.ApplicationCommandData().Options {
-				if opt.Name == "nick" {
-					inputString = opt.StringValue() // Retrieve the string value
-					break
-				}
-			}
-
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: "",
-				},
-			})
-
-			err := s.GuildMemberNickname(i.GuildID, "@me", inputString)
-			if err != nil {
-				fmt.Println(err)
-			}
-
-			s.InteractionResponseDelete(i.Interaction)
-		},
+	cfg := h.getConfig()
+	if cfg == nil || cfg.App.BotID == "" {
+		fmt.Println("Cannot register commands: missing bot ID in config")
+		return
 	}
-)
 
-func isOwnerInteraction(i *discordgo.InteractionCreate) bool {
-	ownerID := config.GetConfig().App.OwnerID
+	registeredCommands := make([]*discordgo.ApplicationCommand, 0, len(h.registrations))
+	commandHandlers := make(map[string]commandHandler, len(h.registrations))
+
+	for _, registration := range h.registrations {
+		cmd, err := s.ApplicationCommandCreate(cfg.App.BotID, "", registration.command)
+		if err != nil {
+			fmt.Printf("Cannot create '%v' command: %v\n", registration.command.Name, err)
+			continue
+		}
+
+		registeredCommands = append(registeredCommands, cmd)
+		commandHandlers[registration.command.Name] = registration.handler
+	}
+
+	if len(registeredCommands) == 0 {
+		fmt.Println("No commands were registered")
+	}
+
+	s.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		if i.Type != discordgo.InteractionApplicationCommand {
+			return
+		}
+
+		if handler, ok := commandHandlers[i.ApplicationCommandData().Name]; ok {
+			handler(s, i)
+		}
+	})
+}
+
+func (h *CommandsHandler) handleHelp(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	h.respondText(s, i, "Please @Me to chat with me! I can also respond to messages that reply to my messages. Sometimes I will change the link in Twitter and Instagram messages to something else ehe~. I'm a Goldfish so I may forget the context of our conversation anytime soon.")
+}
+
+func (h *CommandsHandler) handleSay(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if !h.requireOwner(s, i) {
+		return
+	}
+
+	inputString, ok := h.getStringOption(i, "message")
+	if !ok {
+		h.respondText(s, i, "Missing required option: message")
+		return
+	}
+
+	if !h.respondDeferred(s, i) {
+		return
+	}
+
+	if _, err := s.ChannelMessageSend(i.ChannelID, inputString); err != nil {
+		fmt.Println(err)
+	}
+
+	h.deleteResponse(s, i)
+}
+
+func (h *CommandsHandler) handleNick(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if !h.requireOwner(s, i) {
+		return
+	}
+
+	inputString, ok := h.getStringOption(i, "nick")
+	if !ok {
+		h.respondText(s, i, "Missing required option: nick")
+		return
+	}
+
+	if !h.respondDeferred(s, i) {
+		return
+	}
+
+	if err := s.GuildMemberNickname(i.GuildID, "@me", inputString); err != nil {
+		fmt.Println(err)
+	}
+
+	h.deleteResponse(s, i)
+}
+
+func (h *CommandsHandler) getStringOption(i *discordgo.InteractionCreate, optionName string) (string, bool) {
+	for _, opt := range i.ApplicationCommandData().Options {
+		if opt.Name == optionName {
+			return opt.StringValue(), true
+		}
+	}
+
+	return "", false
+}
+
+func (h *CommandsHandler) requireOwner(s *discordgo.Session, i *discordgo.InteractionCreate) bool {
+	if h.isOwnerInteraction(i) {
+		return true
+	}
+
+	h.respondText(s, i, "Ga boleh")
+	return false
+}
+
+func (h *CommandsHandler) respondText(s *discordgo.Session, i *discordgo.InteractionCreate, content string) {
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: content,
+		},
+	}); err != nil {
+		fmt.Println(err)
+	}
+}
+
+func (h *CommandsHandler) respondDeferred(s *discordgo.Session, i *discordgo.InteractionCreate) bool {
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: "",
+		},
+	}); err != nil {
+		fmt.Println(err)
+		return false
+	}
+
+	return true
+}
+
+func (h *CommandsHandler) deleteResponse(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if err := s.InteractionResponseDelete(i.Interaction); err != nil {
+		fmt.Println(err)
+	}
+}
+
+func (h *CommandsHandler) isOwnerInteraction(i *discordgo.InteractionCreate) bool {
+	cfg := h.getConfig()
+	if cfg == nil {
+		return false
+	}
+
+	ownerID := cfg.App.OwnerID
 	switch {
 	case i.Member != nil && i.Member.User != nil:
 		return i.Member.User.ID == ownerID
@@ -133,23 +232,4 @@ func isOwnerInteraction(i *discordgo.InteractionCreate) bool {
 	default:
 		return false
 	}
-}
-
-func RegisterCommands(s *discordgo.Session) {
-	fmt.Println("Registering commands")
-
-	registeredCommands := make([]*discordgo.ApplicationCommand, len(commands))
-	for i, v := range commands {
-		cmd, err := s.ApplicationCommandCreate(config.GetConfig().App.BotID, "", v)
-		if err != nil {
-			fmt.Printf("Cannot create '%v' command: %v\n", v.Name, err)
-		}
-		registeredCommands[i] = cmd
-	}
-
-	s.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-		if h, ok := commandHandlers[i.ApplicationCommandData().Name]; ok {
-			h(s, i)
-		}
-	})
 }
