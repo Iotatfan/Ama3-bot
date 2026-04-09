@@ -43,9 +43,19 @@ type InterestConfig struct {
 	EnableInterestDetection bool    `mapstructure:"enable_interest_detection" yaml:"enable_interest_detection"`
 }
 
+type RuntimeConfig struct {
+	EnableDirectThrottle    bool `mapstructure:"enable_direct_throttle" yaml:"enable_direct_throttle"`
+	ConversationTTLSeconds  int  `mapstructure:"conversation_ttl_seconds" yaml:"conversation_ttl_seconds"`
+	MaxConversationMappings int  `mapstructure:"max_conversation_mappings" yaml:"max_conversation_mappings"`
+	DirectFlowUserCooldown  int  `mapstructure:"direct_flow_user_cooldown_seconds" yaml:"direct_flow_user_cooldown_seconds"`
+	DirectFlowChanCooldown  int  `mapstructure:"direct_flow_channel_cooldown_seconds" yaml:"direct_flow_channel_cooldown_seconds"`
+	MaxDirectLimiterEntries int  `mapstructure:"max_direct_limiter_entries" yaml:"max_direct_limiter_entries"`
+}
+
 type AIConfig struct {
 	Prompts  PromptConfig   `mapstructure:"prompts" yaml:"prompts"`
 	Interest InterestConfig `mapstructure:"interest" yaml:"interest"`
+	Runtime  RuntimeConfig  `mapstructure:"runtime" yaml:"runtime"`
 }
 
 type PromptConfig struct {
@@ -69,6 +79,12 @@ func LoadConfig() error {
 	viper.AddConfigPath(".")
 
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	viper.SetDefault("ai.runtime.enable_direct_throttle", true)
+	viper.SetDefault("ai.runtime.conversation_ttl_seconds", 21600)
+	viper.SetDefault("ai.runtime.max_conversation_mappings", 1000)
+	viper.SetDefault("ai.runtime.direct_flow_user_cooldown_seconds", 3)
+	viper.SetDefault("ai.runtime.direct_flow_channel_cooldown_seconds", 1)
+	viper.SetDefault("ai.runtime.max_direct_limiter_entries", 4000)
 	viper.AutomaticEnv()
 
 	err := viper.ReadInConfig()

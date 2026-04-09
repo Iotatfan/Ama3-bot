@@ -37,8 +37,7 @@ func ParseUrl(discord *discordgo.Session, message *discordgo.MessageCreate) {
 		return
 	}
 
-	log := fmt.Sprintf("%s : %s\n", message.Author, message.Content)
-	fmt.Print(log)
+	fmt.Printf("URL replace check user_id=%s channel_id=%s len=%d\n", message.Author.ID, message.ChannelID, len(message.Content))
 
 	lines := strings.Split(message.Content, "\n")
 	var allReplies []string

@@ -142,7 +142,7 @@ func RegisterCommands(s *discordgo.Session) {
 	for i, v := range commands {
 		cmd, err := s.ApplicationCommandCreate(config.GetConfig().App.BotID, "", v)
 		if err != nil {
-			fmt.Println("Cannot create '%v' command: %v", v.Name, err)
+			fmt.Printf("Cannot create '%v' command: %v\n", v.Name, err)
 		}
 		registeredCommands[i] = cmd
 	}
