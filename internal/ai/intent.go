@@ -60,16 +60,8 @@ func stripBotMention(content string) string {
 }
 
 func determineIntent(message *discordgo.MessageCreate, ctx context.Context, client *openai.Client, isReplyFlow bool, history string) Intent {
-	intentPrompt := ""
-	if isReplyFlow {
-		intentPrompt = strings.Replace(config.GetConfig().AI.Prompts.IntentReply, "{{.Message}}", message.Content, 1)
-		intentPrompt = strings.Replace(intentPrompt, "{{.History}}", history, 1)
-		intentPrompt = strings.Replace(intentPrompt, "{{.TargetRole}}", strconv.FormatBool(message.ReferencedMessage.Author.ID == config.GetConfig().App.OwnerID), 1)
-		intentPrompt = strings.Replace(intentPrompt, "{{.TargetMessage}}", message.ReferencedMessage.Content, 1)
-	} else {
-		intentPrompt = strings.Replace(config.GetConfig().AI.Prompts.Intent, "{{.Message}}", message.Content, 1)
-		intentPrompt = strings.Replace(intentPrompt, "{{.History}}", history, 1)
-	}
+	cfg := config.GetConfig()
+	intentPrompt := buildIntentPrompt(cfg, message, isReplyFlow, history)
 
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{
@@ -85,6 +77,10 @@ func determineIntent(message *discordgo.MessageCreate, ctx context.Context, clie
 	cleanOutput := strings.ToLower(strings.TrimSpace(resp.OutputText()))
 	fmt.Println("Determined intent:", cleanOutput)
 
+	return parseIntentOutput(cleanOutput)
+}
+
+func parseIntentOutput(cleanOutput string) Intent {
 	switch cleanOutput {
 	case "direct":
 		return IntentDirect
@@ -104,46 +100,87 @@ func determineIntent(message *discordgo.MessageCreate, ctx context.Context, clie
 }
 
 func getMessageHistory(discord *discordgo.Session, message *discordgo.MessageCreate, limit int) (string, error) {
-	// Get past messages for context, combine with current message, and feed into interest scoring prompt.
-	var builder strings.Builder
-	pastMessages, err := discord.ChannelMessages(message.ChannelID, limit, "", "", "")
+	botID := ""
+	if cfg := config.GetConfig(); cfg != nil {
+		botID = cfg.App.BotID
+	}
+
+	pastMessages, err := fetchMessageHistory(discord, message.ChannelID, limit)
 	if err != nil {
 		fmt.Println("error fetching past messages for interest scoring:", err)
-		builder.WriteString(message.Content)
-		return builder.String(), nil
+		return message.Content, nil
 	}
+
+	return formatMessageHistory(pastMessages, message.ID, botID), nil
+}
+
+func fetchMessageHistory(discord *discordgo.Session, channelID string, limit int) ([]*discordgo.Message, error) {
+	return discord.ChannelMessages(channelID, limit, "", "", "")
+}
+
+func formatMessageHistory(pastMessages []*discordgo.Message, currentMessageID, botID string) string {
+	var builder strings.Builder
 
 	// Build history in chronological order, excluding the current message.
 	for i := len(pastMessages) - 1; i >= 0; i-- {
 		m := pastMessages[i]
-		if m.ID == message.ID {
+		if m.ID == currentMessageID {
 			continue
 		}
 
-		msgContent := strings.TrimSpace(m.Content)
-		if msgContent == "" && len(m.Embeds) > 0 {
-			embedContent := strings.TrimSpace(m.Embeds[0].Description)
-			if embedContent != "" {
-				msgContent = fmt.Sprintf("[EMBED: %s]", embedContent)
-			}
-		}
-
+		msgContent := historyMessageContent(m)
 		if msgContent == "" {
 			continue
 		}
 
-		builder.WriteString(fmt.Sprintf("[UID:%s] %s : %s\n", m.Author.ID, m.Author.Username, msgContent))
+		uid, username := historyAuthorLabel(m.Author, botID)
+		builder.WriteString(fmt.Sprintf("[UID:%s] %s : %s\n", uid, username, msgContent))
 	}
 
-	return builder.String(), nil
+	return builder.String()
+}
+
+func historyAuthorLabel(author *discordgo.User, botID string) (string, string) {
+	if author == nil {
+		return "unknown", "Unknown"
+	}
+
+	if author.ID == botID {
+		return author.ID, "(Self)"
+	}
+
+	username := strings.TrimSpace(author.Username)
+	if username == "" {
+		username = "Unknown"
+	}
+
+	return author.ID, username
+}
+
+func historyMessageContent(message *discordgo.Message) string {
+	if message == nil {
+		return ""
+	}
+
+	msgContent := strings.TrimSpace(message.Content)
+	if msgContent != "" {
+		return msgContent
+	}
+
+	if len(message.Embeds) > 0 {
+		embedContent := strings.TrimSpace(message.Embeds[0].Description)
+		if embedContent != "" {
+			return fmt.Sprintf("[EMBED: %s]", embedContent)
+		}
+	}
+
+	return ""
 }
 
 func calculateInterestScore(message *discordgo.MessageCreate, ctx context.Context, client *openai.Client, discord *discordgo.Session) (float32, string) {
-	combinedContent, _ := getMessageHistory(discord, message, config.GetConfig().AI.Interest.PastMessageLimit)
-
-	interjectionPrompt := strings.Replace(config.GetConfig().AI.Prompts.InterestScore, "{{.Message}}", message.Content, 1)
-	interjectionPrompt = strings.Replace(interjectionPrompt, "{{.History}}", combinedContent, 1)
-	interjectionPrompt = strings.Replace(interjectionPrompt, "{{.OwnerID}}", config.GetConfig().App.OwnerID, 1)
+	cfg := config.GetConfig()
+	combinedContent, _ := getMessageHistory(discord, message, cfg.AI.Interest.PastMessageLimit)
+	interjectionPrompt := buildInterestScorePrompt(cfg, message.Content, combinedContent)
 
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{
@@ -165,6 +202,46 @@ func calculateInterestScore(message *discordgo.MessageCreate, ctx context.Contex
 	fmt.Println("Calculated interest score:", score)
 
 	return float32(score), combinedContent
+}
+
+func buildIntentPrompt(cfg *config.Config, message *discordgo.MessageCreate, isReplyFlow bool, history string) string {
+	if cfg == nil {
+		return ""
+	}
+
+	if isReplyFlow {
+		targetIsOwner, targetMessage := referencedMessageDetails(message, cfg.App.OwnerID)
+		intentPrompt := strings.Replace(cfg.AI.Prompts.IntentReply, "{{.Message}}", message.Content, 1)
+		intentPrompt = strings.Replace(intentPrompt, "{{.History}}", history, 1)
+		intentPrompt = strings.Replace(intentPrompt, "{{.TargetRole}}", strconv.FormatBool(targetIsOwner), 1)
+		intentPrompt = strings.Replace(intentPrompt, "{{.TargetMessage}}", targetMessage, 1)
+		return intentPrompt
+	}
+
+	intentPrompt := strings.Replace(cfg.AI.Prompts.Intent, "{{.Message}}", message.Content, 1)
+	intentPrompt = strings.Replace(intentPrompt, "{{.History}}", history, 1)
+	return intentPrompt
+}
+
+func referencedMessageDetails(message *discordgo.MessageCreate, ownerID string) (bool, string) {
+	if message == nil || message.ReferencedMessage == nil || message.ReferencedMessage.Author == nil {
+		return false, ""
+	}
+
+	ref := message.ReferencedMessage
+	return ref.Author.ID == ownerID, ref.Content
+}
+
+func buildInterestScorePrompt(cfg *config.Config, messageContent, history string) string {
+	if cfg == nil {
+		return ""
+	}
+
+	interjectionPrompt := strings.Replace(cfg.AI.Prompts.InterestScore, "{{.Message}}", messageContent, 1)
+	interjectionPrompt = strings.Replace(interjectionPrompt, "{{.History}}", history, 1)
+	interjectionPrompt = strings.Replace(interjectionPrompt, "{{.OwnerID}}", cfg.App.OwnerID, 1)
+
+	return interjectionPrompt
 }
 
 func handlePotentialInterjection(message *discordgo.MessageCreate, ctx context.Context, client *openai.Client, discord *discordgo.Session) (bool, string) {

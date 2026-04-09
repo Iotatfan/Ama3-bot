@@ -61,94 +61,10 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 	default:
 	}
 
-	targetUID := "none"
-	targetRole := "external"
-	senderRole := "external"
-	combinedContent := ""
-	replyTarget := message.Reference()
-	refMsg := message.ReferencedMessage
-
-	if message.Author.ID == config.GetConfig().App.OwnerID {
-		senderRole = "doctor"
-	}
-
-	if refMsg != nil && refMsg.Author.ID == config.GetConfig().App.OwnerID {
-		targetRole = "doctor"
-		replyTarget = refMsg.Reference()
-	}
-
-	if refMsg != nil && refMsg.Author.ID != config.GetConfig().App.BotID {
-		targetUID = refMsg.Author.ID
-		combinedContent = fmt.Sprintf("[INTENT:%s][UID:%s][SENDER_ROLE:%s][TARGET_UID:%s][TARGET_CONTEXT:%s][TARGET_ROLE:%s] %s.", intent, message.Author.ID, senderRole, targetUID, refMsg.Content, targetRole, message.Content)
-	} else {
-		combinedContent = fmt.Sprintf("[INTENT:%s][UID:%s][SENDER_ROLE:%s] %s", intent, message.Author.ID, senderRole, message.Content)
-	}
-
-	if history != "" {
-		combinedContent = fmt.Sprintf("%s\n[CONVERSATION HISTORY]\n%s", combinedContent, history)
-	}
-
-	userContent := []responses.ResponseInputContentUnionParam{
-		{
-			OfInputText: &responses.ResponseInputTextParam{
-				Text: combinedContent,
-			},
-		},
-	}
-
-	if message.Attachments != nil || (message.ReferencedMessage != nil && message.ReferencedMessage.Attachments != nil) {
-		attachments := message.Attachments
-		if message.ReferencedMessage != nil {
-			attachments = append(attachments, message.ReferencedMessage.Attachments...)
-		}
-
-		for _, att := range attachments {
-			if strings.HasPrefix(att.ContentType, "image/") {
-				userContent = append(userContent, responses.ResponseInputContentUnionParam{
-					OfInputImage: &responses.ResponseInputImageParam{
-						ImageURL: openai.String(att.URL),
-					},
-				})
-			}
-		}
-	}
-
-	input := responses.ResponseNewParamsInputUnion{
-		OfInputItemList: []responses.ResponseInputItemUnionParam{
-			{
-				OfMessage: &responses.EasyInputMessageParam{
-					Content: responses.EasyInputMessageContentUnionParam{
-						OfString: openai.String(config.GetConfig().AI.Prompts.System),
-					},
-					Role: responses.EasyInputMessageRoleSystem,
-				},
-			},
-			{
-				OfMessage: &responses.EasyInputMessageParam{
-					Content: responses.EasyInputMessageContentUnionParam{
-						OfString: openai.String(strings.Replace(config.GetConfig().AI.Prompts.IdentityRule, "{{.OwnerID}}", config.GetConfig().App.OwnerID, -1)),
-					},
-					Role: responses.EasyInputMessageRoleSystem,
-				},
-			},
-			{
-				OfMessage: &responses.EasyInputMessageParam{
-					Role: responses.EasyInputMessageRoleDeveloper,
-					Content: responses.EasyInputMessageContentUnionParam{
-						OfString: openai.String(config.GetConfig().AI.Prompts.Developer),
-					},
-				},
-			},
-			{
-				OfMessage: &responses.EasyInputMessageParam{
-					Content: responses.EasyInputMessageContentUnionParam{
-						OfInputItemContentList: userContent,
-					},
-					Role: responses.EasyInputMessageRoleUser,
-				},
-			},
-		},
-	}
+	cfg := config.GetConfig()
+	combinedContent, replyTarget := buildCombinedUserContent(cfg, message, intent, history)
+	userContent := buildUserContent(combinedContent, message)
+	input := buildResponseInput(cfg, userContent)
 
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input: input,
@@ -161,55 +77,8 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 		Reasoning: shared.ReasoningParam{
 			Effort: conversations.ReasoningEffortMedium,
 		},
-		// Tools: []responses.ToolUnionParam{{
-		// 	OfFunction: &responses.FunctionToolParam{
-		// 		Name:        "web_search",
-		// 		Description: openai.String("Search web for up to date info"),
-		// 		Parameters: map[string]any{
-		// 			"type": "object",
-		// 			"properties": map[string]any{
-		// 				"query": map[string]any{
-		// 					"type":        "string",
-		// 					"description": "Search query",
-		// 				},
-		// 			},
-		// 			"required": []string{"query"},
-		// 		},
-		// 	},
-		// }},
 	})
 
-	// for _, item := range resp.Output {
-	// 	fmt.Println("GPT Resp", item.Type)
-	// 	if item.Type == "function_call" {
-	// 		toolCall := item.AsFunctionCall()
-	// 		if toolCall.Name == "web_search" {
-	// 			var args WebSearchInput
-	// 			json.Unmarshal([]byte(toolCall.Arguments), &args)
-	// 			fmt.Println("Query", args.Query)
-
-	// 			resp2, err := client.Responses.New(ctx, responses.ResponseNewParams{
-	// 				Model:              openai.ChatModelGPT5Mini,
-	// 				PreviousResponseID: openai.String(resp.ID),
-	// 				// Instructions:       openai.String(viper.GetString("GPT_SYSTEM_PROMPT")),
-	// 				Input: responses.ResponseNewParamsInputUnion{
-	// 					OfInputItemList: []responses.ResponseInputItemUnionParam{{
-	// 						OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-	// 							CallID: toolCall.CallID,
-	// 							Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
-	// 								OfString: openai.String(args.Query),
-	// 							},
-	// 						},
-	// 					}},
-	// 				},
-	// 			})
-
-	// 			fmt.Println("GPT Resp: ", resp2)
-
-	// 			return resp2, err
-	// 		}
-	// 	}
-	// }
 	if err == nil {
 		return resp, replyTarget, nil
 	}
@@ -237,6 +106,130 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 	}
 
 	return nil, nil, err
+}
+
+func buildCombinedUserContent(cfg *config.Config, message *discordgo.MessageCreate, intent Intent, history string) (string, *discordgo.MessageReference) {
+	targetUID := "none"
+	targetRole := "external"
+	senderRole := "external"
+	replyTarget := message.Reference()
+	refMsg := message.ReferencedMessage
+
+	ownerID := ""
+	botID := ""
+	if cfg != nil {
+		ownerID = cfg.App.OwnerID
+		botID = cfg.App.BotID
+	}
+
+	if message.Author != nil && message.Author.ID == ownerID {
+		senderRole = "doctor"
+	}
+
+	if refMsg != nil && refMsg.Author != nil && refMsg.Author.ID == ownerID {
+		targetRole = "doctor"
+		replyTarget = refMsg.Reference()
+	}
+
+	var combinedContent string
+	if refMsg != nil && refMsg.Author != nil && refMsg.Author.ID != botID {
+		targetUID = refMsg.Author.ID
+		combinedContent = fmt.Sprintf("[INTENT:%s][UID:%s][SENDER_ROLE:%s][TARGET_UID:%s][TARGET_CONTEXT:%s][TARGET_ROLE:%s] %s.", intent, message.Author.ID, senderRole, targetUID, refMsg.Content, targetRole, message.Content)
+	} else {
+		combinedContent = fmt.Sprintf("[INTENT:%s][UID:%s][SENDER_ROLE:%s] %s", intent, message.Author.ID, senderRole, message.Content)
+	}
+
+	if history != "" {
+		combinedContent = fmt.Sprintf("%s\n[CONVERSATION HISTORY]\n%s", combinedContent, history)
+	}
+
+	return combinedContent, replyTarget
+}
+
+func buildUserContent(combinedContent string, message *discordgo.MessageCreate) []responses.ResponseInputContentUnionParam {
+	userContent := []responses.ResponseInputContentUnionParam{
+		{
+			OfInputText: &responses.ResponseInputTextParam{
+				Text: combinedContent,
+			},
+		},
+	}
+
+	for _, att := range collectAttachments(message) {
+		if strings.HasPrefix(att.ContentType, "image/") {
+			userContent = append(userContent, responses.ResponseInputContentUnionParam{
+				OfInputImage: &responses.ResponseInputImageParam{
+					ImageURL: openai.String(att.URL),
+				},
+			})
+		}
+	}
+
+	return userContent
+}
+
+func collectAttachments(message *discordgo.MessageCreate) []*discordgo.MessageAttachment {
+	if message == nil {
+		return nil
+	}
+
+	attachments := make([]*discordgo.MessageAttachment, 0, len(message.Attachments))
+	attachments = append(attachments, message.Attachments...)
+
+	if message.ReferencedMessage != nil {
+		attachments = append(attachments, message.ReferencedMessage.Attachments...)
+	}
+
+	return attachments
+}
+
+func buildResponseInput(cfg *config.Config, userContent []responses.ResponseInputContentUnionParam) responses.ResponseNewParamsInputUnion {
+	systemPrompt := ""
+	identityPrompt := ""
+	developerPrompt := ""
+
+	if cfg != nil {
+		systemPrompt = cfg.AI.Prompts.System
+		identityPrompt = strings.Replace(cfg.AI.Prompts.IdentityRule, "{{.OwnerID}}", cfg.App.OwnerID, -1)
+		developerPrompt = cfg.AI.Prompts.Developer
+	}
+
+	return responses.ResponseNewParamsInputUnion{
+		OfInputItemList: []responses.ResponseInputItemUnionParam{
+			{
+				OfMessage: &responses.EasyInputMessageParam{
+					Content: responses.EasyInputMessageContentUnionParam{
+						OfString: openai.String(systemPrompt),
+					},
+					Role: responses.EasyInputMessageRoleSystem,
+				},
+			},
+			{
+				OfMessage: &responses.EasyInputMessageParam{
+					Content: responses.EasyInputMessageContentUnionParam{
+						OfString: openai.String(identityPrompt),
+					},
+					Role: responses.EasyInputMessageRoleSystem,
+				},
+			},
+			{
+				OfMessage: &responses.EasyInputMessageParam{
+					Role: responses.EasyInputMessageRoleDeveloper,
+					Content: responses.EasyInputMessageContentUnionParam{
+						OfString: openai.String(developerPrompt),
+					},
+				},
+			},
+			{
+				OfMessage: &responses.EasyInputMessageParam{
+					Content: responses.EasyInputMessageContentUnionParam{
+						OfInputItemContentList: userContent,
+					},
+					Role: responses.EasyInputMessageRoleUser,
+				},
+			},
+		},
+	}
 }
 
 func (h *AIHandler) sendReplyMessage(discord *discordgo.Session, message *discordgo.MessageCreate, content string, replyTarget *discordgo.MessageReference, convID string) {
