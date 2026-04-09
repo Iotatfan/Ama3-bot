@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/iotatfan/sora-go/internal/config"
@@ -15,6 +16,10 @@ func ParseMessage(discord *discordgo.Session, message *discordgo.MessageCreate, 
 
 func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
 	if message.Author.ID == config.GetConfig().App.BotID || message.Author.Bot {
+		return
+	}
+
+	if isNoise(message.Content) {
 		return
 	}
 
@@ -50,6 +55,11 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 	message.Content = stripBotMention(message.Content)
 	intent := determineIntent(message, ctx, client, message.ReferencedMessage != nil, history)
 
+	if intent == IntentNoise {
+		fmt.Println("Message classified as noise, skipping response generation")
+		return
+	}
+
 	if message.MessageReference != nil && message.ReferencedMessage != nil && message.ReferencedMessage.Author.ID == config.GetConfig().App.BotID {
 		convID, ok := h.conversationMap.GetConversationByRef(message.MessageReference.MessageID)
 		if ok {
@@ -62,4 +72,19 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 	fmt.Println("Could not find conversation for reference message")
 	fmt.Println("Generating new chat...")
 	h.generateNewChat(discord, message, client, ctx, intent, history)
+}
+
+func isNoise(content string) bool {
+	content = strings.ToLower(strings.TrimSpace(content))
+	noiseWords := []string{"bruh", "lol", "wkwk", "hmmm", "ok", "."}
+
+	if len(content) < 3 {
+		return true
+	}
+	for _, word := range noiseWords {
+		if content == word {
+			return true
+		}
+	}
+	return false
 }

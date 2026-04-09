@@ -21,6 +21,7 @@ const (
 	IntentValidationRequest Intent = "validation_request"
 	IntentActionOnSelf      Intent = "action_on_self"
 	IntentInterjection      Intent = "interjection"
+	IntentNoise             Intent = "noise"
 	Unknown                 Intent = "unknown"
 )
 
@@ -94,6 +95,8 @@ func parseIntentOutput(cleanOutput string) Intent {
 		return IntentActionOnSelf
 	case "interjection":
 		return IntentInterjection
+	case "noise":
+		return IntentNoise
 	default:
 		return Unknown
 	}
