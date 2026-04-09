@@ -120,12 +120,19 @@ func getMessageHistory(discord *discordgo.Session, message *discordgo.MessageCre
 			continue
 		}
 
-		if m.Content == "" && m.Embeds != nil && len(m.Embeds) > 0 {
-			builder.WriteString(fmt.Sprintf("[UID:%s] %s : [EMBED: %s]\n", m.Author.ID, m.Author.Username, m.Embeds[0].Description))
+		msgContent := strings.TrimSpace(m.Content)
+		if msgContent == "" && len(m.Embeds) > 0 {
+			embedContent := strings.TrimSpace(m.Embeds[0].Description)
+			if embedContent != "" {
+				msgContent = fmt.Sprintf("[EMBED: %s]", embedContent)
+			}
+		}
+
+		if msgContent == "" {
 			continue
 		}
 
-		builder.WriteString(fmt.Sprintf("[UID:%s] %s : %s\n", m.Author.ID, m.Author.Username, m.Content))
+		builder.WriteString(fmt.Sprintf("[UID:%s] %s : %s\n", m.Author.ID, m.Author.Username, msgContent))
 	}
 
 	return builder.String(), nil
