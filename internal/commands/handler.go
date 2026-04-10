@@ -76,6 +76,13 @@ func NewCommandsHandlerWithConfig(getConfig func() *config.Config) *CommandsHand
 			},
 			handler: h.handleNick,
 		},
+		{
+			command: &discordgo.ApplicationCommand{
+				Name:        "mon3tr_release",
+				Description: "AMA3: Meltdown Sequence Authorized",
+			},
+			handler: h.handleReleaseMon3tr,
+		},
 	}
 
 	return h
@@ -167,6 +174,14 @@ func (h *CommandsHandler) handleNick(s *discordgo.Session, i *discordgo.Interact
 	h.deleteResponse(s, i)
 }
 
+func (h *CommandsHandler) handleReleaseMon3tr(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if !h.requireOwner(s, i) {
+		return
+	}
+
+	h.respondText(s, i, "https://tenor.com/view/arknights-mon3tr-wahh-cute-roar-gif-18351888906315697493")
+}
+
 func (h *CommandsHandler) getStringOption(i *discordgo.InteractionCreate, optionName string) (string, bool) {
 	for _, opt := range i.ApplicationCommandData().Options {
 		if opt.Name == optionName {
@@ -182,7 +197,7 @@ func (h *CommandsHandler) requireOwner(s *discordgo.Session, i *discordgo.Intera
 		return true
 	}
 
-	h.respondText(s, i, "Ga boleh")
+	h.respondText(s, i, "Access denied. Only those with the necessary clearance may interface with this system. Retrace your steps before you cause an irreversible error")
 	return false
 }
 
@@ -202,6 +217,7 @@ func (h *CommandsHandler) respondDeferred(s *discordgo.Session, i *discordgo.Int
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: "",
+			Flags:   discordgo.MessageFlagsEphemeral,
 		},
 	}); err != nil {
 		fmt.Println(err)
