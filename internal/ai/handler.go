@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
@@ -15,6 +16,10 @@ func ParseMessage(discord *discordgo.Session, message *discordgo.MessageCreate, 
 }
 
 func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
+	if message == nil {
+		return
+	}
+
 	if message.Author.ID == config.GetConfig().App.BotID || message.Author.Bot {
 		return
 	}
@@ -57,6 +62,12 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 
 	if intent == IntentNoise {
 		fmt.Println("Message classified as noise, skipping response generation")
+		reactions := []string{"❌", "🤫", "🙄", "📉"}
+		selected := reactions[rand.Intn(len(reactions))]
+		err := discord.MessageReactionAdd(message.ChannelID, message.ID, selected)
+		if err != nil {
+			fmt.Println("Error adding reaction:", err)
+		}
 		return
 	}
 
