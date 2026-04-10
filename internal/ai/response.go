@@ -114,6 +114,7 @@ func buildCombinedUserContent(cfg *config.Config, message *discordgo.MessageCrea
 	senderRole := "external"
 	replyTarget := message.Reference()
 	refMsg := message.ReferencedMessage
+	refMsgContent := ""
 
 	ownerID := ""
 	botID := ""
@@ -129,14 +130,30 @@ func buildCombinedUserContent(cfg *config.Config, message *discordgo.MessageCrea
 	if refMsg != nil && refMsg.Author != nil && refMsg.Author.ID == ownerID {
 		targetRole = "doctor"
 		replyTarget = refMsg.Reference()
+		refMsgContent = refMsg.Content
+	}
+
+	if refMsg != nil && len(refMsg.Embeds) > 0 {
+		embedContents := make([]string, 0, len(refMsg.Embeds))
+		for _, embed := range refMsg.Embeds {
+			if embed.Title != "" {
+				embedContents = append(embedContents, embed.Title)
+			}
+			if embed.Description != "" {
+				embedContents = append(embedContents, embed.Description)
+			}
+		}
+		if len(embedContents) > 0 {
+			refMsgContent += "\n" + strings.Join(embedContents, "\n")
+		}
 	}
 
 	var combinedContent string
 	if refMsg != nil && refMsg.Author != nil && refMsg.Author.ID != botID {
 		targetUID = refMsg.Author.ID
-		combinedContent = fmt.Sprintf("[INTENT:%s][UID:%s][SENDER_ROLE:%s][TARGET_UID:%s][TARGET_CONTEXT:%s][TARGET_ROLE:%s] %s.", intent, message.Author.ID, senderRole, targetUID, refMsg.Content, targetRole, message.Content)
+		combinedContent = fmt.Sprintf("[INTENT:%s]\n[UID:%s]\n[SENDER_ROLE:%s]\n[TARGET_UID:%s]\n[TARGET_CONTEXT:%s]\n[TARGET_ROLE:%s]\n[LATEST_MESSAGE:%s].", intent, message.Author.ID, senderRole, targetUID, refMsgContent, targetRole, message.Content)
 	} else {
-		combinedContent = fmt.Sprintf("[INTENT:%s][UID:%s][SENDER_ROLE:%s] %s", intent, message.Author.ID, senderRole, message.Content)
+		combinedContent = fmt.Sprintf("[INTENT:%s]\n[UID:%s]\n[SENDER_ROLE:%s]\n[LATEST_MESSAGE:%s]", intent, message.Author.ID, senderRole, message.Content)
 	}
 
 	if history != "" {
@@ -155,32 +172,51 @@ func buildUserContent(combinedContent string, message *discordgo.MessageCreate) 
 		},
 	}
 
-	for _, att := range collectAttachments(message) {
-		if strings.HasPrefix(att.ContentType, "image/") {
-			userContent = append(userContent, responses.ResponseInputContentUnionParam{
-				OfInputImage: &responses.ResponseInputImageParam{
-					ImageURL: openai.String(att.URL),
-				},
-			})
-		}
+	for _, imageURL := range collectAttachments(message) {
+		userContent = append(userContent, responses.ResponseInputContentUnionParam{
+			OfInputImage: &responses.ResponseInputImageParam{
+				ImageURL: openai.String(imageURL),
+			},
+		})
+
 	}
 
 	return userContent
 }
 
-func collectAttachments(message *discordgo.MessageCreate) []*discordgo.MessageAttachment {
+func collectAttachments(message *discordgo.MessageCreate) []string {
 	if message == nil {
 		return nil
 	}
 
-	attachments := make([]*discordgo.MessageAttachment, 0, len(message.Attachments))
-	attachments = append(attachments, message.Attachments...)
-
-	if message.ReferencedMessage != nil {
-		attachments = append(attachments, message.ReferencedMessage.Attachments...)
+	imageUrls := make([]string, 0, len(message.Attachments))
+	for _, att := range message.Attachments {
+		if strings.HasPrefix(att.ContentType, "image/") {
+			imageUrls = append(imageUrls, att.URL)
+		}
 	}
 
-	return attachments
+	for _, embed := range message.Embeds {
+		if embed.Image != nil && embed.Image.URL != "" {
+			imageUrls = append(imageUrls, embed.Image.URL)
+		}
+	}
+
+	if message.ReferencedMessage != nil {
+		for _, att := range message.ReferencedMessage.Attachments {
+			if strings.HasPrefix(att.ContentType, "image/") {
+				imageUrls = append(imageUrls, att.URL)
+			}
+		}
+
+		for _, embed := range message.ReferencedMessage.Embeds {
+			if embed.Image != nil && embed.Image.URL != "" {
+				imageUrls = append(imageUrls, embed.Image.URL)
+			}
+		}
+	}
+
+	return imageUrls
 }
 
 func buildResponseInput(cfg *config.Config, userContent []responses.ResponseInputContentUnionParam) responses.ResponseNewParamsInputUnion {
