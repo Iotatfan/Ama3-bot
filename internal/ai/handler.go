@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"strings"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/iotatfan/sora-go/internal/config"
@@ -24,7 +23,7 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 		return
 	}
 
-	if isNoise(message.Content) {
+	if message.Content == "" && len(message.Attachments) == 0 && len(message.Embeds) == 0 {
 		return
 	}
 
@@ -61,13 +60,7 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 	intent := determineIntent(message, ctx, client, message.ReferencedMessage != nil, history)
 
 	if intent == IntentNoise {
-		fmt.Println("Message classified as noise, skipping response generation")
-		reactions := []string{"❌", "🤫", "🙄", "📉"}
-		selected := reactions[rand.Intn(len(reactions))]
-		err := discord.MessageReactionAdd(message.ChannelID, message.ID, selected)
-		if err != nil {
-			fmt.Println("Error adding reaction:", err)
-		}
+		reactToNoise(discord, message)
 		return
 	}
 
@@ -85,17 +78,11 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 	h.generateNewChat(discord, message, client, ctx, intent, history)
 }
 
-func isNoise(content string) bool {
-	content = strings.ToLower(strings.TrimSpace(content))
-	noiseWords := []string{"bruh", "lol", "wkwk", "hmmm", "ok", "."}
-
-	if len(content) < 3 {
-		return true
+func reactToNoise(discord *discordgo.Session, message *discordgo.MessageCreate) {
+	reactions := []string{"❌", "🤫", "🙄", "📉"}
+	selected := reactions[rand.Intn(len(reactions))]
+	err := discord.MessageReactionAdd(message.ChannelID, message.ID, selected)
+	if err != nil {
+		fmt.Println("Error adding reaction:", err)
 	}
-	for _, word := range noiseWords {
-		if content == word {
-			return true
-		}
-	}
-	return false
 }

@@ -212,18 +212,45 @@ func buildIntentPrompt(cfg *config.Config, message *discordgo.MessageCreate, isR
 		return ""
 	}
 
+	enrichedContent := getEnrichedContent(message)
+
 	if isReplyFlow {
 		targetIsOwner, targetMessage := referencedMessageDetails(message, cfg.App.OwnerID)
-		intentPrompt := strings.Replace(cfg.AI.Prompts.IntentReply, "{{.Message}}", message.Content, 1)
+		intentPrompt := strings.Replace(cfg.AI.Prompts.IntentReply, "{{.Message}}", enrichedContent, 1)
 		intentPrompt = strings.Replace(intentPrompt, "{{.History}}", history, 1)
 		intentPrompt = strings.Replace(intentPrompt, "{{.TargetRole}}", strconv.FormatBool(targetIsOwner), 1)
 		intentPrompt = strings.Replace(intentPrompt, "{{.TargetMessage}}", targetMessage, 1)
 		return intentPrompt
 	}
 
-	intentPrompt := strings.Replace(cfg.AI.Prompts.Intent, "{{.Message}}", message.Content, 1)
+	intentPrompt := strings.Replace(cfg.AI.Prompts.Intent, "{{.Message}}", enrichedContent, 1)
 	intentPrompt = strings.Replace(intentPrompt, "{{.History}}", history, 1)
 	return intentPrompt
+}
+
+func getEnrichedContent(message *discordgo.MessageCreate) string {
+	content := message.Content
+
+	var tags []string
+
+	if len(message.Attachments) > 0 {
+		tags = append(tags, fmt.Sprintf("[ATTACHMENT_PRESENT: %d file(s)]", len(message.Attachments)))
+	}
+
+	if len(message.Embeds) > 0 {
+		for _, e := range message.Embeds {
+			if e.Image != nil || e.Thumbnail != nil || e.Video != nil {
+				tags = append(tags, "[EMBED_PRESENT]")
+				break
+			}
+		}
+	}
+
+	if len(tags) > 0 {
+		return strings.Join(tags, " ") + " " + content
+	}
+
+	return content
 }
 
 func referencedMessageDetails(message *discordgo.MessageCreate, ownerID string) (bool, string) {
