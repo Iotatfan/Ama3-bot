@@ -19,6 +19,10 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 		return
 	}
 
+	if message.Author == nil {
+		return
+	}
+
 	if message.Author.ID == config.GetConfig().App.BotID || message.Author.Bot {
 		return
 	}
