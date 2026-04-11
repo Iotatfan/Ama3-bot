@@ -8,7 +8,6 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	aiHandler "github.com/iotatfan/sora-go/internal/ai"
-	"github.com/iotatfan/sora-go/internal/commands"
 	"github.com/iotatfan/sora-go/internal/config"
 	urlReplaceHandler "github.com/iotatfan/sora-go/internal/url_replace"
 	"github.com/openai/openai-go/v3"
@@ -37,7 +36,7 @@ func main() {
 		aiHandler.ParseMessage(s, m, &aiClient, ctx)
 	})
 	discord.AddHandler(urlReplaceHandler.ParseUrl)
-	commands.RegisterCommands(discord)
+	// commands.RegisterCommands(discord)
 
 	if err := discord.Open(); err != nil {
 		fmt.Println("discord open error:", err)
