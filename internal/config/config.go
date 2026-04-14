@@ -13,6 +13,7 @@ type Config struct {
 	Auth     AuthConfig     `mapstructure:"auth" yaml:"auth"`
 	Platform PlatformConfig `mapstructure:"platform" yaml:"platform"`
 	AI       AIConfig       `mapstructure:"ai" yaml:"ai"`
+	Database DatabaseConfig `mapstructure:"database" yaml:"database"`
 }
 
 type AppConfig struct {
@@ -23,6 +24,13 @@ type AppConfig struct {
 type AuthConfig struct {
 	DiscordToken string `mapstructure:"discord_token" yaml:"discord_token"`
 	OpenAIKey    string `mapstructure:"openai_key" yaml:"openai_key"`
+}
+
+type DatabaseConfig struct {
+	DSN             string `mapstructure:"dsn" yaml:"dsn"`
+	MaxOpenConns    int    `mapstructure:"max_open_conns" yaml:"max_open_conns"`
+	MaxIdleConns    int    `mapstructure:"max_idle_conns" yaml:"max_idle_conns"`
+	ConnMaxLifetime string `mapstructure:"conn_max_lifetime" yaml:"conn_max_lifetime"`
 }
 
 type PlatformConfig struct {
@@ -56,6 +64,7 @@ type AIConfig struct {
 	Prompts  PromptConfig   `mapstructure:"prompts" yaml:"prompts"`
 	Interest InterestConfig `mapstructure:"interest" yaml:"interest"`
 	Runtime  RuntimeConfig  `mapstructure:"runtime" yaml:"runtime"`
+	Summary  SummaryConfig  `mapstructure:"summary" yaml:"summary"`
 }
 
 type PromptConfig struct {
@@ -65,6 +74,13 @@ type PromptConfig struct {
 	Intent        string `mapstructure:"intent" yaml:"intent"`
 	IntentReply   string `mapstructure:"intent_reply" yaml:"intent_reply"`
 	InterestScore string `mapstructure:"interest_score" yaml:"interest_score"`
+	Summary       string `mapstructure:"summary" yaml:"summary"`
+}
+
+type SummaryConfig struct {
+	Enabled             bool `mapstructure:"enabled" yaml:"enabled"`
+	SummaryMessageLimit int  `mapstructure:"summary_message_limit" yaml:"summary_message_limit"`
+	MessageThreshold    int  `mapstructure:"message_threshold" yaml:"message_threshold"`
 }
 
 var Cfg *Config

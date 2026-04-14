@@ -33,13 +33,21 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 
 	fmt.Printf("Received message user_id=%s channel_id=%s len=%d\n", message.Author.ID, message.ChannelID, len(message.Content))
 
+	if config.GetConfig().AI.Summary.Enabled && message.Content != "" {
+		if msgs, should := h.userMessageCounter.AddMessageAndCheckSummary(message.Author.ID, message.Content, config.GetConfig().AI.Summary.MessageThreshold); should {
+			go h.updateUserSummary(message.Author.ID, message.Author.Username, msgs, client, context.Background())
+		}
+	}
+
+	userSummary, _ := h.getUserSummary(message.Author.ID)
+
 	if !isBotMentioned(message) && !isReplyToBot(discord, message) && config.GetConfig().AI.Interest.EnableInterestDetection {
 		if !h.isNotCooldown(message.ChannelID) {
 			fmt.Println("Channel is in cooldown, skipping interest check")
 			return
 		}
 
-		shouldHandle, history := handlePotentialInterjection(message, ctx, client, discord)
+		shouldHandle, history := handlePotentialInterjection(message, ctx, client, discord, userSummary)
 		if shouldHandle {
 			h.updateChannelActivity(message.ChannelID)
 
@@ -61,7 +69,7 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 	history, _ := getMessageHistory(discord, message, config.GetConfig().AI.Interest.PastMessageLimit)
 
 	message.Content = stripBotMention(message.Content)
-	intent := determineIntent(message, ctx, client, message.ReferencedMessage != nil, history)
+	intent := determineIntent(message, ctx, client, message.ReferencedMessage != nil, history, userSummary)
 
 	if intent == IntentNoise {
 		reactToNoise(discord, message)
@@ -89,4 +97,57 @@ func reactToNoise(discord *discordgo.Session, message *discordgo.MessageCreate) 
 	if err != nil {
 		fmt.Println("Error adding reaction:", err)
 	}
+}
+
+func (h *AIHandler) updateUserSummary(uid string, username string, msgs []string, client *openai.Client, ctx context.Context) {
+	userSummary, err := h.getUserSummary(uid)
+	if err != nil {
+		fmt.Println("Error fetching user summary:", err)
+		return
+	}
+
+	updatedUserSummary, err := h.GenerateUserSummary(username, userSummary, msgs, client, ctx)
+	if err != nil {
+		fmt.Println("Error generating updated user summary:", err)
+		return
+	}
+
+	h.userMessageCounter.UpdateSummary(uid, updatedUserSummary)
+
+	if h.userRepo != nil {
+		err := h.userRepo.UpsertUserSummary(uid, updatedUserSummary)
+		if err != nil {
+			fmt.Println("Error saving user summary to db:", err)
+		}
+	}
+}
+
+func (h *AIHandler) getUserSummary(uid string) (string, error) {
+	if config.GetConfig().AI.Summary.Enabled == false {
+		return "", nil
+	}
+
+	h.userMessageCounter.mu.RLock()
+	stats, exists := h.userMessageCounter.counters[uid]
+	h.userMessageCounter.mu.RUnlock()
+
+	if exists && stats.Summary != "" {
+		return stats.Summary, nil
+	}
+
+	if h.userRepo == nil {
+		return "", nil
+	}
+
+	summary, err := h.userRepo.GetUserSummary(uid)
+	if err != nil {
+		return "", err
+	}
+
+	if summary == "" {
+		return "", nil
+	}
+
+	h.userMessageCounter.UpdateSummary(uid, summary)
+	return summary, nil
 }

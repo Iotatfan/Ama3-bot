@@ -60,9 +60,9 @@ func stripBotMention(content string) string {
 	return strings.TrimSpace(strings.Join(strings.Fields(replacer.Replace(content)), " "))
 }
 
-func determineIntent(message *discordgo.MessageCreate, ctx context.Context, client *openai.Client, isReplyFlow bool, history string) Intent {
+func determineIntent(message *discordgo.MessageCreate, ctx context.Context, client *openai.Client, isReplyFlow bool, history string, userSummary string) Intent {
 	cfg := config.GetConfig()
-	intentPrompt := buildIntentPrompt(cfg, message, isReplyFlow, history)
+	intentPrompt := buildIntentPrompt(cfg, message, isReplyFlow, history, userSummary)
 
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{
@@ -180,10 +180,10 @@ func historyMessageContent(message *discordgo.Message) string {
 	return ""
 }
 
-func calculateInterestScore(message *discordgo.MessageCreate, ctx context.Context, client *openai.Client, discord *discordgo.Session) (float32, string) {
+func calculateInterestScore(message *discordgo.MessageCreate, ctx context.Context, client *openai.Client, discord *discordgo.Session, userSummary string) (float32, string) {
 	cfg := config.GetConfig()
 	combinedContent, _ := getMessageHistory(discord, message, cfg.AI.Interest.PastMessageLimit)
-	interjectionPrompt := buildInterestScorePrompt(cfg, message.Content, combinedContent)
+	interjectionPrompt := buildInterestScorePrompt(cfg, message.Content, combinedContent, userSummary)
 
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{
@@ -207,7 +207,7 @@ func calculateInterestScore(message *discordgo.MessageCreate, ctx context.Contex
 	return float32(score), combinedContent
 }
 
-func buildIntentPrompt(cfg *config.Config, message *discordgo.MessageCreate, isReplyFlow bool, history string) string {
+func buildIntentPrompt(cfg *config.Config, message *discordgo.MessageCreate, isReplyFlow bool, history string, userSummary string) string {
 	if cfg == nil {
 		return ""
 	}
@@ -220,11 +220,13 @@ func buildIntentPrompt(cfg *config.Config, message *discordgo.MessageCreate, isR
 		intentPrompt = strings.Replace(intentPrompt, "{{.History}}", history, 1)
 		intentPrompt = strings.Replace(intentPrompt, "{{.TargetRole}}", strconv.FormatBool(targetIsOwner), 1)
 		intentPrompt = strings.Replace(intentPrompt, "{{.TargetMessage}}", targetMessage, 1)
+		intentPrompt = strings.Replace(intentPrompt, "{{.UserSummary}}", userSummary, 1)
 		return intentPrompt
 	}
-
 	intentPrompt := strings.Replace(cfg.AI.Prompts.Intent, "{{.Message}}", enrichedContent, 1)
 	intentPrompt = strings.Replace(intentPrompt, "{{.History}}", history, 1)
+	intentPrompt = strings.Replace(intentPrompt, "{{.UserSummary}}", userSummary, 1)
+
 	return intentPrompt
 }
 
@@ -262,20 +264,21 @@ func referencedMessageDetails(message *discordgo.MessageCreate, ownerID string) 
 	return ref.Author.ID == ownerID, ref.Content
 }
 
-func buildInterestScorePrompt(cfg *config.Config, messageContent, history string) string {
+func buildInterestScorePrompt(cfg *config.Config, messageContent, history string, userSummary string) string {
 	if cfg == nil {
 		return ""
 	}
 
 	interjectionPrompt := strings.Replace(cfg.AI.Prompts.InterestScore, "{{.Message}}", messageContent, 1)
 	interjectionPrompt = strings.Replace(interjectionPrompt, "{{.History}}", history, 1)
-	interjectionPrompt = strings.Replace(interjectionPrompt, "{{.OwnerID}}", cfg.App.OwnerID, 1)
+	interjectionPrompt = strings.ReplaceAll(interjectionPrompt, "{{.OwnerID}}", cfg.App.OwnerID)
+	interjectionPrompt = strings.Replace(interjectionPrompt, "{{.UserSummary}}", userSummary, 1)
 
 	return interjectionPrompt
 }
 
-func handlePotentialInterjection(message *discordgo.MessageCreate, ctx context.Context, client *openai.Client, discord *discordgo.Session) (bool, string) {
-	score, interjectionMsg := calculateInterestScore(message, ctx, client, discord)
+func handlePotentialInterjection(message *discordgo.MessageCreate, ctx context.Context, client *openai.Client, discord *discordgo.Session, userSummary string) (bool, string) {
+	score, interjectionMsg := calculateInterestScore(message, ctx, client, discord, userSummary)
 
 	if score > float32(config.GetConfig().AI.Interest.InterestScoreThreshold) {
 		return true, interjectionMsg

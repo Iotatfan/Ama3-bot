@@ -6,15 +6,30 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/iotatfan/sora-go/internal/config"
+	"github.com/iotatfan/sora-go/internal/repository"
 )
 
-var defaultAIHandler = NewAIHandler()
+var defaultAIHandler = NewAIHandler(nil)
 
 type AIHandler struct {
-	conversationMap *ConversationMap
-	typingManager   *TypingManager
-	channelCooldown channelCooldownTracker
-	directLimiter   directFlowLimiter
+	conversationMap    *ConversationMap
+	typingManager      *TypingManager
+	channelCooldown    channelCooldownTracker
+	directLimiter      directFlowLimiter
+	userMessageCounter *UserTracker
+	userRepo           repository.UserRepository
+}
+
+type UserStats struct {
+	Count       int
+	Summary     string
+	Messages    []string
+	LastUpdated time.Time
+}
+
+type UserTracker struct {
+	mu       sync.RWMutex
+	counters map[string]*UserStats
 }
 
 type ConversationMap struct {
@@ -49,8 +64,9 @@ type directFlowLimiter struct {
 	chanLastReq map[string]time.Time
 }
 
-func NewAIHandler() *AIHandler {
+func NewAIHandler(userRepo repository.UserRepository) *AIHandler {
 	return &AIHandler{
+		userRepo:        userRepo,
 		conversationMap: NewConversationMap(),
 		typingManager:   NewTypingManager(),
 		channelCooldown: channelCooldownTracker{
@@ -59,6 +75,9 @@ func NewAIHandler() *AIHandler {
 		directLimiter: directFlowLimiter{
 			userLastReq: make(map[string]time.Time),
 			chanLastReq: make(map[string]time.Time),
+		},
+		userMessageCounter: &UserTracker{
+			counters: make(map[string]*UserStats),
 		},
 	}
 }
@@ -73,6 +92,12 @@ func NewConversationMap() *ConversationMap {
 func NewTypingManager() *TypingManager {
 	return &TypingManager{
 		workers: make(map[string]*typingWorker),
+	}
+}
+
+func NewUserTracker() *UserTracker {
+	return &UserTracker{
+		counters: make(map[string]*UserStats),
 	}
 }
 
@@ -299,4 +324,44 @@ func (h *AIHandler) allowDirectFlow(userID, channelID string) bool {
 	h.directLimiter.userLastReq[userID] = now
 	h.directLimiter.chanLastReq[channelID] = now
 	return true
+}
+
+func (t *UserTracker) AddMessageAndCheckSummary(uid string, content string, threshold int) ([]string, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	stats, exists := t.counters[uid]
+	if !exists {
+		stats = &UserStats{Messages: []string{}, LastUpdated: time.Now()}
+		t.counters[uid] = stats
+	}
+
+	stats.Messages = append(stats.Messages, content)
+	stats.Count++
+	stats.LastUpdated = time.Now()
+
+	if stats.Count >= threshold {
+		stats.Count = 0
+		msgs := make([]string, len(stats.Messages))
+		copy(msgs, stats.Messages)
+		stats.Messages = []string{}
+		return msgs, true
+	}
+
+	return nil, false
+}
+
+func (t *UserTracker) UpdateSummary(uid, summary string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	stats, exists := t.counters[uid]
+	if !exists {
+		stats = &UserStats{Summary: summary, LastUpdated: time.Now()}
+		t.counters[uid] = stats
+		return
+	}
+
+	stats.Summary = summary
+	stats.LastUpdated = time.Now()
 }

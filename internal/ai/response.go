@@ -23,8 +23,13 @@ func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discord
 		fmt.Println("error generating response:", err)
 		return
 	}
+	userSummary, err := h.getUserSummary(message.Author.ID)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
-	resp, replyTarget, err := generateAIResponse(message, client, ctx, conv.ID, intent, history)
+	resp, replyTarget, err := generateAIResponse(message, client, ctx, conv.ID, intent, history, userSummary)
 	if err != nil {
 		fmt.Println("error generating response:", err)
 		return
@@ -40,12 +45,16 @@ func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *di
 	refID := message.MessageReference.MessageID
 	convID, ok := h.conversationMap.GetConversationByRef(refID)
 	if !ok {
-		// fallback: go to generate new chat flow
 		return
 	}
 	fmt.Println("Generating follow-up chat for conversation ID:", convID)
+	userSummary, err := h.getUserSummary(message.Author.ID)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
-	resp, replyTarget, err := generateAIResponse(message, client, ctx, convID, intent, history)
+	resp, replyTarget, err := generateAIResponse(message, client, ctx, convID, intent, history, userSummary)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -54,7 +63,7 @@ func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *di
 	h.sendReplyMessage(discord, message, resp.OutputText(), replyTarget, convID)
 }
 
-func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, convID string, intent Intent, history string) (*responses.Response, *discordgo.MessageReference, error) {
+func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, convID string, intent Intent, history string, userSummary string) (*responses.Response, *discordgo.MessageReference, error) {
 	select {
 	case <-ctx.Done():
 		return nil, nil, ctx.Err()
@@ -62,7 +71,7 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 	}
 
 	cfg := config.GetConfig()
-	combinedContent, replyTarget := buildCombinedUserContent(cfg, message, intent, history)
+	combinedContent, replyTarget := buildCombinedUserContent(cfg, message, intent, history, userSummary)
 	userContent := buildUserContent(combinedContent, message)
 	input := buildResponseInput(cfg, userContent)
 
@@ -108,7 +117,7 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 	return nil, nil, err
 }
 
-func buildCombinedUserContent(cfg *config.Config, message *discordgo.MessageCreate, intent Intent, history string) (string, *discordgo.MessageReference) {
+func buildCombinedUserContent(cfg *config.Config, message *discordgo.MessageCreate, intent Intent, history string, userSummary string) (string, *discordgo.MessageReference) {
 	targetUID := "none"
 	targetRole := "external"
 	senderRole := "external"
@@ -158,6 +167,10 @@ func buildCombinedUserContent(cfg *config.Config, message *discordgo.MessageCrea
 
 	if history != "" {
 		combinedContent = fmt.Sprintf("%s\n[CONVERSATION HISTORY]\n%s", combinedContent, history)
+	}
+
+	if userSummary != "" {
+		combinedContent = fmt.Sprintf("%s\n[SUBJECT_SUMMARY]\n%s", combinedContent, userSummary)
 	}
 
 	return combinedContent, replyTarget
@@ -225,9 +238,10 @@ func buildResponseInput(cfg *config.Config, userContent []responses.ResponseInpu
 	developerPrompt := ""
 
 	if cfg != nil {
-		systemPrompt = cfg.AI.Prompts.System
-		identityPrompt = strings.Replace(cfg.AI.Prompts.IdentityRule, "{{.OwnerID}}", cfg.App.OwnerID, -1)
-		developerPrompt = cfg.AI.Prompts.Developer
+		systemPrompt = strings.ReplaceAll(cfg.AI.Prompts.System, "{{.OwnerID}}", cfg.App.OwnerID)
+		identityPrompt = strings.ReplaceAll(cfg.AI.Prompts.IdentityRule, "{{.OwnerID}}", cfg.App.OwnerID)
+		developerPrompt = strings.ReplaceAll(cfg.AI.Prompts.Developer, "{{.OwnerID}}", cfg.App.OwnerID)
+
 	}
 
 	return responses.ResponseNewParamsInputUnion{
@@ -324,4 +338,28 @@ func smartSentenceChunk(text string, limit int) []string {
 	}
 
 	return chunks
+}
+
+func (h *AIHandler) GenerateUserSummary(username string, userSummary string, messages []string, client *openai.Client, ctx context.Context) (string, error) {
+	if len(messages) == 0 {
+		return "", nil
+	}
+
+	summaryPrompt := config.GetConfig().AI.Prompts.Summary
+	summaryPrompt = strings.Replace(summaryPrompt, "{{.OldSummary}}", userSummary, 1)
+	summaryPrompt = strings.Replace(summaryPrompt, "{{.NewMessages}}", strings.Join(messages, "\n"), 1)
+	summaryPrompt = strings.Replace(summaryPrompt, "{{.Username}}", username, 1)
+
+	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
+		Input: responses.ResponseNewParamsInputUnion{
+			OfString: openai.String(summaryPrompt),
+		},
+		Model: openai.ChatModelGPT5_4Mini,
+	})
+	if err != nil {
+		fmt.Println("error determining intent:", err)
+		return "", err
+	}
+
+	return resp.OutputText(), nil
 }
