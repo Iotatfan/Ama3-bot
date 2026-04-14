@@ -40,6 +40,10 @@ func isReplyToBot(discord *discordgo.Session, message *discordgo.MessageCreate) 
 		return false
 	}
 
+	if message.ReferencedMessage != nil {
+		return message.ReferencedMessage.Author.ID == config.GetConfig().App.BotID
+	}
+
 	refID := message.MessageReference.MessageID
 	msg, err := discord.ChannelMessage(message.ChannelID, refID)
 	if err != nil {
@@ -149,7 +153,7 @@ func formatMessageHistory(pastMessages []*discordgo.Message, currentMessageID, b
 
 func historyAuthorLabel(author *discordgo.User, botID string) (uid string, label string) {
 	if author == nil {
-		return "0", "unknow"
+		return "0", "unknown"
 	}
 
 	if author.ID == botID {

@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -17,6 +18,11 @@ import (
 func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string) {
 	stopTyping := h.typingManager.Start(discord, message.ChannelID)
 	defer stopTyping()
+
+	if intent == IntentNoise {
+		reactToNoise(discord, message)
+		return
+	}
 
 	conv, err := client.Conversations.New(ctx, conversations.ConversationNewParams{})
 	if err != nil {
@@ -41,6 +47,11 @@ func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discord
 func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string) {
 	stopTyping := h.typingManager.Start(discord, message.ChannelID)
 	defer stopTyping()
+
+	if intent == IntentNoise {
+		reactToNoise(discord, message)
+		return
+	}
 
 	refID := message.MessageReference.MessageID
 	convID, ok := h.conversationMap.GetConversationByRef(refID)
@@ -362,4 +373,13 @@ func (h *AIHandler) GenerateUserSummary(username string, userSummary string, mes
 	}
 
 	return resp.OutputText(), nil
+}
+
+func reactToNoise(discord *discordgo.Session, message *discordgo.MessageCreate) {
+	reactions := []string{"❌", "🤫", "🙄", "📉"}
+	selected := reactions[rand.Intn(len(reactions))]
+	err := discord.MessageReactionAdd(message.ChannelID, message.ID, selected)
+	if err != nil {
+		fmt.Println("Error adding reaction:", err)
+	}
 }

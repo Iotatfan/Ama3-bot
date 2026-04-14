@@ -3,7 +3,6 @@ package ai
 import (
 	"context"
 	"fmt"
-	"math/rand"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/iotatfan/sora-go/internal/config"
@@ -41,23 +40,26 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 
 	userSummary, _ := h.getUserSummary(message.Author.ID)
 
-	if !isBotMentioned(message) && !isReplyToBot(discord, message) && config.GetConfig().AI.Interest.EnableInterestDetection {
-		if !h.isNotCooldown(message.ChannelID) {
-			fmt.Println("Channel is in cooldown, skipping interest check")
+	if message.GuildID != "" && !isBotMentioned(message) && !isReplyToBot(discord, message) {
+		if config.GetConfig().AI.Interest.EnableInterestDetection {
+			if !h.isNotCooldown(message.ChannelID) {
+				fmt.Println("Channel is in cooldown, skipping interest check")
+				return
+			}
+
+			shouldHandle, history := handlePotentialInterjection(message, ctx, client, discord, userSummary)
+			if shouldHandle {
+				h.updateChannelActivity(message.ChannelID)
+
+				fmt.Println("Message is not directed at bot and has high interest score, generating interjection response...")
+				message.Content = stripBotMention(message.Content)
+
+				h.generateNewChat(discord, message, client, ctx, IntentInterjection, history)
+				return
+			}
+			fmt.Println("Message is not directed at bot and has low interest score, skipping...")
 			return
 		}
-
-		shouldHandle, history := handlePotentialInterjection(message, ctx, client, discord, userSummary)
-		if shouldHandle {
-			h.updateChannelActivity(message.ChannelID)
-
-			fmt.Println("Message is not directed at bot and has high interest score, generating interjection response...")
-			message.Content = stripBotMention(message.Content)
-
-			h.generateNewChat(discord, message, client, ctx, IntentInterjection, history)
-			return
-		}
-		fmt.Println("Message is not directed at bot and has low interest score, skipping...")
 		return
 	}
 
@@ -71,11 +73,6 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 	message.Content = stripBotMention(message.Content)
 	intent := determineIntent(message, ctx, client, message.ReferencedMessage != nil, history, userSummary)
 
-	if intent == IntentNoise {
-		reactToNoise(discord, message)
-		return
-	}
-
 	if message.MessageReference != nil && message.ReferencedMessage != nil && message.ReferencedMessage.Author.ID == config.GetConfig().App.BotID {
 		convID, ok := h.conversationMap.GetConversationByRef(message.MessageReference.MessageID)
 		if ok {
@@ -88,15 +85,6 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 	fmt.Println("Could not find conversation for reference message")
 	fmt.Println("Generating new chat...")
 	h.generateNewChat(discord, message, client, ctx, intent, history)
-}
-
-func reactToNoise(discord *discordgo.Session, message *discordgo.MessageCreate) {
-	reactions := []string{"❌", "🤫", "🙄", "📉"}
-	selected := reactions[rand.Intn(len(reactions))]
-	err := discord.MessageReactionAdd(message.ChannelID, message.ID, selected)
-	if err != nil {
-		fmt.Println("Error adding reaction:", err)
-	}
 }
 
 func (h *AIHandler) updateUserSummary(uid string, username string, msgs []string, client *openai.Client, ctx context.Context) {
