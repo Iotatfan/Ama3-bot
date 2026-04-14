@@ -89,14 +89,15 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input: input,
 		Model: openai.ChatModelGPT5_4,
-		Conversation: responses.ResponseNewParamsConversationUnion{
-			OfConversationObject: &responses.ResponseConversationParam{
-				ID: convID,
-			},
-		},
+		// Conversation: responses.ResponseNewParamsConversationUnion{
+		// 	OfConversationObject: &responses.ResponseConversationParam{
+		// 		ID: convID,
+		// 	},
+		// },
 		Reasoning: shared.ReasoningParam{
 			Effort: conversations.ReasoningEffortMedium,
 		},
+		PromptCacheRetention: "24h",
 	})
 
 	if err == nil {
@@ -167,21 +168,20 @@ func buildCombinedUserContent(cfg *config.Config, message *discordgo.MessageCrea
 			refMsgContent += "\n" + strings.Join(embedContents, "\n")
 		}
 	}
-
 	var combinedContent string
+
+	if userSummary != "" {
+		combinedContent = fmt.Sprintf("%s\n[SUBJECT_SUMMARY]\n%s", combinedContent, userSummary)
+	}
+	if history != "" {
+		combinedContent = fmt.Sprintf("%s\n[CONVERSATION HISTORY]\n%s", combinedContent, history)
+	}
+
 	if refMsg != nil && refMsg.Author != nil && refMsg.Author.ID != botID {
 		targetUID = refMsg.Author.ID
 		combinedContent = fmt.Sprintf("[INTENT:%s]\n[UID:%s]\n[SENDER_ROLE:%s]\n[TARGET_UID:%s]\n[TARGET_CONTEXT:%s]\n[TARGET_ROLE:%s]\n[LATEST_MESSAGE:%s].", intent, message.Author.ID, senderRole, targetUID, refMsgContent, targetRole, message.Content)
 	} else {
 		combinedContent = fmt.Sprintf("[INTENT:%s]\n[UID:%s]\n[SENDER_ROLE:%s]\n[LATEST_MESSAGE:%s]", intent, message.Author.ID, senderRole, message.Content)
-	}
-
-	if history != "" {
-		combinedContent = fmt.Sprintf("%s\n[CONVERSATION HISTORY]\n%s", combinedContent, history)
-	}
-
-	if userSummary != "" {
-		combinedContent = fmt.Sprintf("%s\n[SUBJECT_SUMMARY]\n%s", combinedContent, userSummary)
 	}
 
 	return combinedContent, replyTarget
