@@ -136,28 +136,27 @@ func formatMessageHistory(pastMessages []*discordgo.Message, currentMessageID, b
 			continue
 		}
 
-		uid, username := historyAuthorLabel(m.Author, botID)
-		builder.WriteString(fmt.Sprintf("[UID:%s] %s : %s\n", uid, username, msgContent))
+		uid, label := historyAuthorLabel(m.Author, botID)
+		if label != "" {
+			builder.WriteString(fmt.Sprintf("[UID:%s] %s : %s\n", uid, label, msgContent))
+		} else {
+			builder.WriteString(fmt.Sprintf("[UID:%s] : %s\n", uid, msgContent))
+		}
 	}
 
 	return builder.String()
 }
 
-func historyAuthorLabel(author *discordgo.User, botID string) (string, string) {
+func historyAuthorLabel(author *discordgo.User, botID string) (uid string, label string) {
 	if author == nil {
-		return "unknown", "Unknown"
+		return "unknown", ""
 	}
 
 	if author.ID == botID {
 		return author.ID, "(Self)"
 	}
 
-	username := strings.TrimSpace(author.Username)
-	if username == "" {
-		username = "Unknown"
-	}
-
-	return author.ID, username
+	return author.ID, ""
 }
 
 func historyMessageContent(message *discordgo.Message) string {

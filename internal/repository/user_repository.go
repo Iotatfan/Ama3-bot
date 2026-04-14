@@ -1,6 +1,10 @@
 package repository
 
 import (
+	"fmt"
+
+	"github.com/iotatfan/sora-go/internal/config"
+	"github.com/iotatfan/sora-go/internal/crypto"
 	"github.com/iotatfan/sora-go/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -24,9 +28,19 @@ func (r *userRepository) UpsertUserSummary(uid, summary string) error {
 		return nil
 	}
 
+	key, err := config.GetEncryptionKey()
+	if err != nil {
+		return fmt.Errorf("UpsertUserSummary: %w", err)
+	}
+
+	encrypted, err := crypto.Encrypt(key, summary)
+	if err != nil {
+		return fmt.Errorf("UpsertUserSummary: encrypt summary: %w", err)
+	}
+
 	userProfile := models.UserProfile{
 		DiscordUID: uid,
-		Summary:    summary,
+		Summary:    encrypted,
 	}
 
 	return r.db.Clauses(clause.OnConflict{
@@ -50,5 +64,15 @@ func (r *userRepository) GetUserSummary(uid string) (string, error) {
 		return "", result.Error
 	}
 
-	return userProfile.Summary, nil
+	key, err := config.GetEncryptionKey()
+	if err != nil {
+		return "", fmt.Errorf("GetUserSummary: %w", err)
+	}
+
+	decrypted, err := crypto.Decrypt(key, userProfile.Summary)
+	if err != nil {
+		return "", fmt.Errorf("GetUserSummary: decrypt summary: %w", err)
+	}
+
+	return decrypted, nil
 }

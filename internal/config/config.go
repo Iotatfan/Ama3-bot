@@ -1,6 +1,8 @@
 package config
 
 import (
+	"encoding/hex"
+	"errors"
 	"os"
 	"strings"
 
@@ -14,6 +16,13 @@ type Config struct {
 	Platform PlatformConfig `mapstructure:"platform" yaml:"platform"`
 	AI       AIConfig       `mapstructure:"ai" yaml:"ai"`
 	Database DatabaseConfig `mapstructure:"database" yaml:"database"`
+	Security SecurityConfig `mapstructure:"security" yaml:"security"`
+}
+
+type SecurityConfig struct {
+	// EncryptionKey is a 64-character hex string (32 bytes) used for AES-256-GCM
+	// encryption of sensitive fields at rest. Leave empty to disable encryption.
+	EncryptionKey string `mapstructure:"encryption_key" yaml:"encryption_key"`
 }
 
 type AppConfig struct {
@@ -136,4 +145,24 @@ func checkConfig() error {
 
 func GetConfig() *Config {
 	return Cfg
+}
+
+// GetEncryptionKey decodes the hex encryption key from config.
+// Returns nil if encryption is disabled (empty key).
+// Returns an error if the key is set but malformed or not 32 bytes.
+func GetEncryptionKey() ([]byte, error) {
+	if Cfg == nil || Cfg.Security.EncryptionKey == "" {
+		return nil, nil
+	}
+
+	key, err := hex.DecodeString(Cfg.Security.EncryptionKey)
+	if err != nil {
+		return nil, errors.New("security.encryption_key: invalid hex string")
+	}
+
+	if len(key) != 32 {
+		return nil, errors.New("security.encryption_key: must be 64 hex characters (32 bytes) for AES-256")
+	}
+
+	return key, nil
 }

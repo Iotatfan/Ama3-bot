@@ -36,14 +36,15 @@ func main() {
 			Logger: logger.Default.LogMode(logger.Silent),
 		})
 		if gormErr != nil {
-			fmt.Println("failed to connect to database:", gormErr)
-			return
-		}
+			fmt.Println("Warning: failed to connect to database:", gormErr)
+			fmt.Println("Proceeding without database support.")
+		} else {
 
-		if err := db.AutoMigrate(&models.UserProfile{}); err != nil {
-			fmt.Println("Error during database migration:", err)
+			if err := db.AutoMigrate(&models.UserProfile{}); err != nil {
+				fmt.Println("Warning: database migration error:", err)
+			}
+			userRepo = repository.NewUserRepository(db)
 		}
-		userRepo = repository.NewUserRepository(db)
 	}
 	handler := aiHandler.NewAIHandler(userRepo)
 
