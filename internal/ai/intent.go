@@ -149,14 +149,14 @@ func formatMessageHistory(pastMessages []*discordgo.Message, currentMessageID, b
 
 func historyAuthorLabel(author *discordgo.User, botID string) (uid string, label string) {
 	if author == nil {
-		return "unknown", ""
+		return "0", "unknow"
 	}
 
 	if author.ID == botID {
 		return author.ID, "(Self)"
 	}
 
-	return author.ID, ""
+	return author.ID, author.Username
 }
 
 func historyMessageContent(message *discordgo.Message) string {
