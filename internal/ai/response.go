@@ -87,11 +87,11 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input: input,
 		Model: openai.ChatModelGPT5_4,
-		// Conversation: responses.ResponseNewParamsConversationUnion{
-		// 	OfConversationObject: &responses.ResponseConversationParam{
-		// 		ID: convID,
-		// 	},
-		// },
+		Conversation: responses.ResponseNewParamsConversationUnion{
+			OfConversationObject: &responses.ResponseConversationParam{
+				ID: convID,
+			},
+		},
 		Reasoning: shared.ReasoningParam{
 			Effort: conversations.ReasoningEffortMedium,
 		},
@@ -108,11 +108,11 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 		fallbackResp, fallbackErr := client.Responses.New(ctx, responses.ResponseNewParams{
 			Input: input,
 			Model: openai.ChatModelGPT5_4Mini,
-			// Conversation: responses.ResponseNewParamsConversationUnion{
-			// 	OfConversationObject: &responses.ResponseConversationParam{
-			// 		ID: convID,
-			// 	},
-			// },
+			Conversation: responses.ResponseNewParamsConversationUnion{
+				OfConversationObject: &responses.ResponseConversationParam{
+					ID: convID,
+				},
+			},
 			Reasoning: shared.ReasoningParam{
 				Effort: conversations.ReasoningEffortMedium,
 			},
