@@ -16,6 +16,10 @@ import (
 )
 
 func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string, userSummary string) {
+	if !havePermissionToSendMessages(discord, message) {
+		return
+	}
+
 	stopTyping := h.typingManager.Start(discord, message.ChannelID)
 	defer stopTyping()
 
@@ -40,6 +44,10 @@ func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discord
 }
 
 func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string, userSummary string) {
+	if !havePermissionToSendMessages(discord, message) {
+		return
+	}
+
 	stopTyping := h.typingManager.Start(discord, message.ChannelID)
 	defer stopTyping()
 
@@ -366,29 +374,8 @@ func (h *AIHandler) GenerateUserSummary(username string, userSummary string, mes
 }
 
 func reactToNoise(discord *discordgo.Session, message *discordgo.MessageCreate) {
-	if message.GuildID != "" {
-		perms, err := discord.UserChannelPermissions(config.GetConfig().App.BotID, message.ChannelID)
-		if err != nil {
-			fmt.Println("Error checking permissions:", err)
-			return
-		}
-
-		if perms&discordgo.PermissionAddReactions == 0 {
-			fmt.Printf("Missing permission to add reactions in channel_id=%s\n", message.ChannelID)
-
-			dmChannel, err := discord.UserChannelCreate(message.Author.ID)
-			if err != nil {
-				fmt.Println("Failed to create DM channel:", err)
-				return
-			}
-
-			_, err = discord.ChannelMessageSend(dmChannel.ID, fmt.Sprintf("I don't have permission to reply in <#%s>.", message.ChannelID))
-			if err != nil {
-				fmt.Println("Failed to send DM message:", err)
-			}
-
-			return
-		}
+	if !havePermissionToSendMessages(discord, message) {
+		return
 	}
 
 	reactions := []string{"❌", "🤫", "🙄", "📉"}
@@ -396,5 +383,37 @@ func reactToNoise(discord *discordgo.Session, message *discordgo.MessageCreate) 
 	err := discord.MessageReactionAdd(message.ChannelID, message.ID, selected)
 	if err != nil {
 		fmt.Println("Error adding reaction:", err)
+		return
 	}
+
+	return
+}
+
+func havePermissionToSendMessages(discord *discordgo.Session, message *discordgo.MessageCreate) bool {
+	if message.GuildID != "" {
+		perms, err := discord.UserChannelPermissions(config.GetConfig().App.BotID, message.ChannelID)
+		if err != nil {
+			fmt.Println("Error checking permissions:", err)
+			return false
+		}
+
+		if perms&discordgo.PermissionSendMessages == 0 {
+			fmt.Printf("Missing permission to send messages in channel_id=%s\n", message.ChannelID)
+
+			dmChannel, err := discord.UserChannelCreate(message.Author.ID)
+			if err != nil {
+				fmt.Println("Failed to create DM channel:", err)
+				return false
+			}
+
+			_, err = discord.ChannelMessageSend(dmChannel.ID, fmt.Sprintf("I don't have permission to reply in <#%s>.", message.ChannelID))
+			if err != nil {
+				fmt.Println("Failed to send DM message:", err)
+			}
+
+			return false
+		}
+	}
+
+	return true
 }
