@@ -306,19 +306,6 @@ func (h *AIHandler) sendReplyMessage(discord *discordgo.Session, message *discor
 	sent, err := discord.ChannelMessageSendReply(message.ChannelID, content, replyTarget)
 	if err != nil {
 		fmt.Println(err)
-		if err.Error() == `HTTP 403 Forbidden, {"message": "Missing Permissions", "code": 50013}` {
-			fmt.Println("Insufficient permissions to send message")
-			dmChannel, err := discord.UserChannelCreate(message.Author.ID)
-			if err != nil {
-				fmt.Println("Failed to create DM channel:", err)
-				return
-			}
-
-			_, err = discord.ChannelMessageSend(dmChannel.ID, "I don't have permission to reply in that channel.")
-			if err != nil {
-				fmt.Println("Failed to send DM message:", err)
-			}
-		}
 		return
 	}
 	h.conversationMap.Set(convID, sent.ID)
@@ -379,9 +366,32 @@ func (h *AIHandler) GenerateUserSummary(username string, userSummary string, mes
 }
 
 func reactToNoise(discord *discordgo.Session, message *discordgo.MessageCreate) {
+	perms, err := discord.UserChannelPermissions(config.GetConfig().App.BotID, message.ChannelID)
+	if err != nil {
+		fmt.Println("Error checking permissions:", err)
+		return
+	}
+
+	if perms&discordgo.PermissionAddReactions == 0 {
+		fmt.Printf("Missing permission to add reactions in channel_id=%s\n", message.ChannelID)
+
+		dmChannel, err := discord.UserChannelCreate(message.Author.ID)
+		if err != nil {
+			fmt.Println("Failed to create DM channel:", err)
+			return
+		}
+
+		_, err = discord.ChannelMessageSend(dmChannel.ID, "I don't have permission to reply in that channel.")
+		if err != nil {
+			fmt.Println("Failed to send DM message:", err)
+		}
+
+		return
+	}
+
 	reactions := []string{"❌", "🤫", "🙄", "📉"}
 	selected := reactions[rand.Intn(len(reactions))]
-	err := discord.MessageReactionAdd(message.ChannelID, message.ID, selected)
+	err = discord.MessageReactionAdd(message.ChannelID, message.ID, selected)
 	if err != nil {
 		fmt.Println("Error adding reaction:", err)
 	}
