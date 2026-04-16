@@ -54,7 +54,7 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 				fmt.Println("Message is not directed at bot and has high interest score, generating interjection response...")
 				message.Content = stripBotMention(message.Content)
 
-				h.generateNewChat(discord, message, client, ctx, IntentInterjection, history)
+				h.generateNewChat(discord, message, client, ctx, IntentInterjection, history, userSummary)
 				return
 			}
 			fmt.Println("Message is not directed at bot and has low interest score, skipping...")
@@ -77,14 +77,14 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 		convID, ok := h.conversationMap.GetConversationByRef(message.MessageReference.MessageID)
 		if ok {
 			fmt.Println("Found conversation ID:", convID)
-			h.generateFollowUpChat(discord, message, client, ctx, intent, history)
+			h.generateFollowUpChat(discord, message, client, ctx, intent, history, userSummary)
 			return
 		}
 	}
 
 	fmt.Println("Could not find conversation for reference message")
 	fmt.Println("Generating new chat...")
-	h.generateNewChat(discord, message, client, ctx, intent, history)
+	h.generateNewChat(discord, message, client, ctx, intent, history, userSummary)
 }
 
 func (h *AIHandler) updateUserSummary(uid string, username string, msgs []string, client *openai.Client, ctx context.Context) {
@@ -111,7 +111,7 @@ func (h *AIHandler) updateUserSummary(uid string, username string, msgs []string
 }
 
 func (h *AIHandler) getUserSummary(uid string) (string, error) {
-	if config.GetConfig().AI.Summary.Enabled == false {
+	if !config.GetConfig().AI.Summary.Enabled {
 		return "", nil
 	}
 

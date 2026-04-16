@@ -15,7 +15,7 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 )
 
-func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string) {
+func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string, userSummary string) {
 	stopTyping := h.typingManager.Start(discord, message.ChannelID)
 	defer stopTyping()
 
@@ -29,11 +29,6 @@ func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discord
 		fmt.Println("error generating response:", err)
 		return
 	}
-	userSummary, err := h.getUserSummary(message.Author.ID)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
 
 	resp, replyTarget, err := generateAIResponse(message, client, ctx, conv.ID, intent, history, userSummary)
 	if err != nil {
@@ -44,7 +39,7 @@ func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discord
 	h.sendReplyMessage(discord, message, resp.OutputText(), replyTarget, conv.ID)
 }
 
-func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string) {
+func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string, userSummary string) {
 	stopTyping := h.typingManager.Start(discord, message.ChannelID)
 	defer stopTyping()
 
@@ -59,11 +54,6 @@ func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *di
 		return
 	}
 	fmt.Println("Generating follow-up chat for conversation ID:", convID)
-	userSummary, err := h.getUserSummary(message.Author.ID)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
 
 	resp, replyTarget, err := generateAIResponse(message, client, ctx, convID, intent, history, userSummary)
 	if err != nil {
@@ -97,7 +87,7 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 		Reasoning: shared.ReasoningParam{
 			Effort: conversations.ReasoningEffortMedium,
 		},
-		PromptCacheRetention: "24h",
+		PromptCacheRetention: responses.ResponseNewParamsPromptCacheRetention24h,
 	})
 
 	if err == nil {
