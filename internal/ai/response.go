@@ -100,11 +100,11 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 		fallbackResp, fallbackErr := client.Responses.New(ctx, responses.ResponseNewParams{
 			Input: input,
 			Model: openai.ChatModelGPT5_4Mini,
-			Conversation: responses.ResponseNewParamsConversationUnion{
-				OfConversationObject: &responses.ResponseConversationParam{
-					ID: convID,
-				},
-			},
+			// Conversation: responses.ResponseNewParamsConversationUnion{
+			// 	OfConversationObject: &responses.ResponseConversationParam{
+			// 		ID: convID,
+			// 	},
+			// },
 			Reasoning: shared.ReasoningParam{
 				Effort: conversations.ReasoningEffortMedium,
 			},
@@ -306,6 +306,19 @@ func (h *AIHandler) sendReplyMessage(discord *discordgo.Session, message *discor
 	sent, err := discord.ChannelMessageSendReply(message.ChannelID, content, replyTarget)
 	if err != nil {
 		fmt.Println(err)
+		if err.Error() == `HTTP 403 Forbidden, {"message": "Missing Permissions", "code": 50013}` {
+			fmt.Println("Insufficient permissions to send message")
+			dmChannel, err := discord.UserChannelCreate(message.Author.ID)
+			if err != nil {
+				fmt.Println("Failed to create DM channel:", err)
+				return
+			}
+
+			_, err = discord.ChannelMessageSend(dmChannel.ID, "I don't have permission to reply in that channel.")
+			if err != nil {
+				fmt.Println("Failed to send DM message:", err)
+			}
+		}
 		return
 	}
 	h.conversationMap.Set(convID, sent.ID)
