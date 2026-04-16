@@ -390,7 +390,7 @@ func reactToNoise(discord *discordgo.Session, message *discordgo.MessageCreate) 
 }
 
 func havePermissionToSendMessages(discord *discordgo.Session, message *discordgo.MessageCreate) bool {
-	if message.GuildID != "" {
+	if message.GuildID != "" && (isBotMentioned(message) || isReplyToBot(discord, message)) {
 		perms, err := discord.UserChannelPermissions(config.GetConfig().App.BotID, message.ChannelID)
 		if err != nil {
 			fmt.Println("Error checking permissions:", err)
