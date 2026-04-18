@@ -22,6 +22,7 @@ const (
 	IntentActionOnSelf      Intent = "action_on_self"
 	IntentInterjection      Intent = "interjection"
 	IntentNoise             Intent = "noise"
+	IntentProvocation       Intent = "provocation"
 	Unknown                 Intent = "unknown"
 )
 
@@ -101,6 +102,8 @@ func parseIntentOutput(cleanOutput string) Intent {
 		return IntentInterjection
 	case "noise":
 		return IntentNoise
+	case "provocation":
+		return IntentProvocation
 	default:
 		return Unknown
 	}
