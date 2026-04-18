@@ -168,18 +168,18 @@ func buildCombinedUserContent(cfg *config.Config, message *discordgo.MessageCrea
 	}
 	var combinedContent string
 
-	if userSummary != "" {
-		combinedContent = fmt.Sprintf("%s\n[SUBJECT_SUMMARY]\n%s", combinedContent, userSummary)
-	}
-	if history != "" {
-		combinedContent = fmt.Sprintf("%s\n[CONVERSATION HISTORY]\n%s", combinedContent, history)
-	}
-
 	if refMsg != nil && refMsg.Author != nil && refMsg.Author.ID != botID {
 		targetUID = refMsg.Author.ID
 		combinedContent = fmt.Sprintf("[INTENT:%s]\n[UID:%s]\n[SENDER_ROLE:%s]\n[TARGET_UID:%s]\n[TARGET_CONTEXT:%s]\n[TARGET_ROLE:%s]\n[LATEST_MESSAGE:%s].", intent, message.Author.ID, senderRole, targetUID, refMsgContent, targetRole, message.Content)
 	} else {
 		combinedContent = fmt.Sprintf("[INTENT:%s]\n[UID:%s]\n[SENDER_ROLE:%s]\n[LATEST_MESSAGE:%s]", intent, message.Author.ID, senderRole, message.Content)
+	}
+
+	if userSummary != "" {
+		combinedContent = fmt.Sprintf("%s\n[SUBJECT_SUMMARY]\n%s", combinedContent, userSummary)
+	}
+	if history != "" {
+		combinedContent = fmt.Sprintf("%s\n[CONVERSATION HISTORY]\n%s", combinedContent, history)
 	}
 
 	return combinedContent, replyTarget
