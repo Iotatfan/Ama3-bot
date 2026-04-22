@@ -104,6 +104,9 @@ func LoadConfig() error {
 	viper.AddConfigPath(".")
 
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	viper.SetDefault("platform.replacements.enabled", false)
+	viper.SetDefault("ai.interest.enable_interest_detection", false)
+	viper.SetDefault("ai.summary.enabled", false)
 	viper.SetDefault("ai.runtime.enable_direct_throttle", true)
 	viper.SetDefault("ai.runtime.conversation_ttl_seconds", 21600)
 	viper.SetDefault("ai.runtime.max_conversation_mappings", 1000)
