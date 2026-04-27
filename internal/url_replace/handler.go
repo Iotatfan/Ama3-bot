@@ -110,7 +110,7 @@ func (h *URLReplaceHandler) shouldProcessMessage(cfg *config.Config, message *di
 		return false
 	}
 
-	if message.GuildID != "" && contains(cfg.Platform.BlacklistGuilds, message.GuildID) {
+	if message.GuildID != "" && !contains(cfg.Platform.WhitelistGuilds, message.GuildID) {
 		return false
 	}
 

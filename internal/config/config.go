@@ -26,8 +26,9 @@ type SecurityConfig struct {
 }
 
 type AppConfig struct {
-	BotID   string `mapstructure:"bot_id" yaml:"bot_id"`
-	OwnerID string `mapstructure:"owner_id" yaml:"owner_id"`
+	BotID          string `mapstructure:"bot_id" yaml:"bot_id"`
+	OwnerID        string `mapstructure:"owner_id" yaml:"owner_id"`
+	EnableCommands bool   `mapstructure:"enable_commands" yaml:"enable_commands"`
 }
 
 type AuthConfig struct {
@@ -43,7 +44,7 @@ type DatabaseConfig struct {
 }
 
 type PlatformConfig struct {
-	BlacklistGuilds []string          `mapstructure:"blacklist_guilds" yaml:"blacklist_guilds"`
+	WhitelistGuilds []string          `mapstructure:"whitelist_guilds" yaml:"whitelist_guilds"`
 	Replacements    ReplacementConfig `mapstructure:"replacements" yaml:"replacements"`
 }
 

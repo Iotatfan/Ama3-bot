@@ -97,22 +97,11 @@ func (h *CommandsHandler) RegisterCommands(s *discordgo.Session) {
 		return
 	}
 
-	registeredCommands := make([]*discordgo.ApplicationCommand, 0, len(h.registrations))
 	commandHandlers := make(map[string]commandHandler, len(h.registrations))
 
+	// Register local handlers first so they are immediately available
 	for _, registration := range h.registrations {
-		cmd, err := s.ApplicationCommandCreate(cfg.App.BotID, "", registration.command)
-		if err != nil {
-			fmt.Printf("Cannot create '%v' command: %v\n", registration.command.Name, err)
-			continue
-		}
-
-		registeredCommands = append(registeredCommands, cmd)
 		commandHandlers[registration.command.Name] = registration.handler
-	}
-
-	if len(registeredCommands) == 0 {
-		fmt.Println("No commands were registered")
 	}
 
 	s.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -124,6 +113,26 @@ func (h *CommandsHandler) RegisterCommands(s *discordgo.Session) {
 			handler(s, i)
 		}
 	})
+
+	// Register commands with Discord in the background to avoid blocking
+	// on network errors or rate limits.
+	go func() {
+		registeredCount := 0
+		for _, registration := range h.registrations {
+			_, err := s.ApplicationCommandCreate(cfg.App.BotID, "", registration.command)
+			if err != nil {
+				fmt.Printf("Cannot create '%v' command: %v\n", registration.command.Name, err)
+				continue
+			}
+			registeredCount++
+		}
+
+		if registeredCount == 0 {
+			fmt.Println("No commands were registered")
+		} else {
+			fmt.Printf("Successfully registered %d commands\n", registeredCount)
+		}
+	}()
 }
 
 func (h *CommandsHandler) handleHelp(s *discordgo.Session, i *discordgo.InteractionCreate) {
