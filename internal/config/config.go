@@ -43,7 +43,7 @@ type DatabaseConfig struct {
 }
 
 type PlatformConfig struct {
-	BlacklistGuilds []string          `mapstructure:"blacklist_guilds" yaml:"blacklist_guilds"`
+	WhitelistGuilds []string          `mapstructure:"whitelist_guilds" yaml:"whitelist_guilds"`
 	Replacements    ReplacementConfig `mapstructure:"replacements" yaml:"replacements"`
 }
 
