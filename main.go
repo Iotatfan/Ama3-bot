@@ -8,6 +8,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	aiHandler "github.com/iotatfan/sora-go/internal/ai"
+	"github.com/iotatfan/sora-go/internal/commands"
 	"github.com/iotatfan/sora-go/internal/config"
 	"github.com/iotatfan/sora-go/internal/models"
 	"github.com/iotatfan/sora-go/internal/repository"
@@ -62,7 +63,10 @@ func main() {
 		handler.ParseMessage(s, m, &aiClient, ctx)
 	})
 	discord.AddHandler(urlReplaceHandler.ParseUrl)
-	// commands.RegisterCommands(discord)
+
+	if config.GetConfig().App.EnableCommands {
+		commands.RegisterCommands(discord)
+	}
 
 	if err := discord.Open(); err != nil {
 		fmt.Println("discord open error:", err)

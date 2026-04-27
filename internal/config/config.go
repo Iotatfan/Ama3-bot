@@ -26,8 +26,9 @@ type SecurityConfig struct {
 }
 
 type AppConfig struct {
-	BotID   string `mapstructure:"bot_id" yaml:"bot_id"`
-	OwnerID string `mapstructure:"owner_id" yaml:"owner_id"`
+	BotID          string `mapstructure:"bot_id" yaml:"bot_id"`
+	OwnerID        string `mapstructure:"owner_id" yaml:"owner_id"`
+	EnableCommands bool   `mapstructure:"enable_commands" yaml:"enable_commands"`
 }
 
 type AuthConfig struct {
