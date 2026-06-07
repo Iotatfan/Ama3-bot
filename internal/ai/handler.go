@@ -54,7 +54,7 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 				fmt.Println("Message is not directed at bot and has high interest score, generating interjection response...")
 				message.Content = stripBotMention(message.Content)
 
-				h.generateNewChat(discord, message, client, ctx, IntentInterjection, history, userSummary)
+				h.generateNewChat(discord, message, client, ctx, IntentInterjection, history, userSummary, "")
 				return
 			}
 			fmt.Println("Message is not directed at bot and has low interest score, skipping...")
@@ -72,19 +72,20 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 
 	message.Content = stripBotMention(message.Content)
 	intent := determineIntent(message, ctx, client, message.ReferencedMessage != nil, history, userSummary)
+	targetSummary := h.getMentionedTargetSummary(message, intent)
 
 	if message.MessageReference != nil && message.ReferencedMessage != nil && message.ReferencedMessage.Author.ID == config.GetConfig().App.BotID {
 		convID, ok := h.conversationMap.GetConversationByRef(message.MessageReference.MessageID)
 		if ok {
 			fmt.Println("Found conversation ID:", convID)
-			h.generateFollowUpChat(discord, message, client, ctx, intent, history, userSummary)
+			h.generateFollowUpChat(discord, message, client, ctx, intent, history, userSummary, targetSummary)
 			return
 		}
 	}
 
 	fmt.Println("Could not find conversation for reference message")
 	fmt.Println("Generating new chat...")
-	h.generateNewChat(discord, message, client, ctx, intent, history, userSummary)
+	h.generateNewChat(discord, message, client, ctx, intent, history, userSummary, targetSummary)
 }
 
 func (h *AIHandler) updateUserSummary(uid string, username string, msgs []string, client *openai.Client, ctx context.Context) {
@@ -138,4 +139,39 @@ func (h *AIHandler) getUserSummary(uid string) (string, error) {
 
 	h.userMessageCounter.UpdateSummary(uid, summary)
 	return summary, nil
+}
+
+func (h *AIHandler) getMentionedTargetSummary(message *discordgo.MessageCreate, intent Intent) string {
+	if intent != IntentAskAbout {
+		return ""
+	}
+
+	targetUID := mentionedTargetUID(message, config.GetConfig().App.BotID)
+	if targetUID == "" {
+		return ""
+	}
+
+	targetSummary, err := h.getUserSummary(targetUID)
+	if err != nil {
+		fmt.Printf("Error fetching target user summary uid=%s: %v\n", targetUID, err)
+		return ""
+	}
+
+	return targetSummary
+}
+
+func mentionedTargetUID(message *discordgo.MessageCreate, botID string) string {
+	if message == nil {
+		return ""
+	}
+
+	for _, mention := range message.Mentions {
+		if mention == nil || mention.ID == "" || mention.ID == botID {
+			continue
+		}
+
+		return mention.ID
+	}
+
+	return ""
 }

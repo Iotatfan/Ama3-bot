@@ -15,7 +15,7 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 )
 
-func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string, userSummary string) {
+func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string, userSummary string, targetSummary string) {
 	if !havePermissionToSendMessages(discord, message) {
 		return
 	}
@@ -34,7 +34,7 @@ func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discord
 		return
 	}
 
-	resp, replyTarget, err := generateAIResponse(message, client, ctx, conv.ID, intent, history, userSummary)
+	resp, replyTarget, err := generateAIResponse(message, client, ctx, conv.ID, intent, history, userSummary, targetSummary)
 	if err != nil {
 		fmt.Println("error generating response:", err)
 		return
@@ -43,7 +43,7 @@ func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discord
 	h.sendReplyMessage(discord, message, resp.OutputText(), replyTarget, conv.ID)
 }
 
-func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string, userSummary string) {
+func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string, userSummary string, targetSummary string) {
 	if !havePermissionToSendMessages(discord, message) {
 		return
 	}
@@ -63,7 +63,7 @@ func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *di
 	}
 	fmt.Println("Generating follow-up chat for conversation ID:", convID)
 
-	resp, replyTarget, err := generateAIResponse(message, client, ctx, convID, intent, history, userSummary)
+	resp, replyTarget, err := generateAIResponse(message, client, ctx, convID, intent, history, userSummary, targetSummary)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -72,7 +72,7 @@ func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *di
 	h.sendReplyMessage(discord, message, resp.OutputText(), replyTarget, convID)
 }
 
-func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, convID string, intent Intent, history string, userSummary string) (*responses.Response, *discordgo.MessageReference, error) {
+func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, convID string, intent Intent, history string, userSummary string, targetSummary string) (*responses.Response, *discordgo.MessageReference, error) {
 	select {
 	case <-ctx.Done():
 		return nil, nil, ctx.Err()
@@ -80,7 +80,7 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 	}
 
 	cfg := config.GetConfig()
-	combinedContent, replyTarget := buildCombinedUserContent(cfg, message, intent, history, userSummary)
+	combinedContent, replyTarget := buildCombinedUserContent(cfg, message, intent, history, userSummary, targetSummary)
 	userContent := buildUserContent(combinedContent, message)
 	input := buildResponseInput(cfg, userContent)
 
@@ -127,7 +127,7 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 	return nil, nil, err
 }
 
-func buildCombinedUserContent(cfg *config.Config, message *discordgo.MessageCreate, intent Intent, history string, userSummary string) (string, *discordgo.MessageReference) {
+func buildCombinedUserContent(cfg *config.Config, message *discordgo.MessageCreate, intent Intent, history string, userSummary string, targetSummary string) (string, *discordgo.MessageReference) {
 	targetUID := "none"
 	targetRole := "external"
 	senderRole := "external"
@@ -177,6 +177,9 @@ func buildCombinedUserContent(cfg *config.Config, message *discordgo.MessageCrea
 
 	if userSummary != "" {
 		combinedContent = fmt.Sprintf("%s\n[SUBJECT_SUMMARY]\n%s", combinedContent, userSummary)
+	}
+	if intent == IntentAskAbout && targetSummary != "" {
+		combinedContent = fmt.Sprintf("%s\n[TARGET_USER_SUMMARY]\n%s", combinedContent, targetSummary)
 	}
 	if history != "" {
 		combinedContent = fmt.Sprintf("%s\n[CONVERSATION HISTORY]\n%s", combinedContent, history)

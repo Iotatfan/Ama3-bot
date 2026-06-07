@@ -1,3 +1,4 @@
 config.yml
 .env
 prompts_archive/
+.gocache/
