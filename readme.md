@@ -108,7 +108,6 @@ Ama3 is highly tunable via `config.yml` or Viper environment variables (use `_` 
 | Key | Description |
 | :--- | :--- |
 | `ai.prompts.*` | Override the built-in system, developer, intent, interest, and summary prompt templates. |
-| `platform.whitelist_guilds` | Restrict link-replacement to specific server IDs. |
 | `ai.interest.interest_score_threshold` | Tune how aggressively the bot interjects into conversations. |
 | `security.encryption_key` | Enable AES-256-GCM at-rest encryption for stored user summaries. |
 
