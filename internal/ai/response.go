@@ -23,7 +23,7 @@ func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discord
 	stopTyping := h.typingManager.Start(discord, message.ChannelID)
 	defer stopTyping()
 
-	if intent == IntentNoise {
+	if intent == IntentNoise && rand.Float32() < 0.7 {
 		h.reactToNoise(discord, message)
 		return
 	}
