@@ -26,23 +26,36 @@ const (
 	Unknown                 Intent = "unknown"
 )
 
-func isBotMentioned(message *discordgo.MessageCreate) bool {
-	botID := config.GetConfig().App.BotID
+func isBotMentioned(cfg *config.Config, message *discordgo.MessageCreate) bool {
+	if cfg == nil || message == nil {
+		return false
+	}
+
+	botID := cfg.App.BotID
 	for _, u := range message.Mentions {
 		if u.ID == botID {
 			return true
 		}
 	}
+
+	roleID := cfg.App.RoleID
+	for _, u := range message.MentionRoles {
+		if u == roleID {
+			return true
+		}
+	}
+
 	return false
 }
 
-func isReplyToBot(discord *discordgo.Session, message *discordgo.MessageCreate) bool {
+func (h *AIHandler) isReplyToBot(discord *discordgo.Session, message *discordgo.MessageCreate) bool {
 	if message.MessageReference == nil || message.MessageReference.MessageID == "" {
 		return false
 	}
 
+	botID := h.config().App.BotID
 	if message.ReferencedMessage != nil {
-		return message.ReferencedMessage.Author.ID == config.GetConfig().App.BotID
+		return message.ReferencedMessage.Author.ID == botID
 	}
 
 	refID := message.MessageReference.MessageID
@@ -52,11 +65,15 @@ func isReplyToBot(discord *discordgo.Session, message *discordgo.MessageCreate) 
 		return false
 	}
 
-	return msg.Author.ID == config.GetConfig().App.BotID
+	return msg.Author.ID == botID
 }
 
-func stripBotMention(content string) string {
-	botID := config.GetConfig().App.BotID
+func stripBotMention(cfg *config.Config, content string) string {
+	botID := ""
+	if cfg != nil {
+		botID = cfg.App.BotID
+	}
+
 	replacer := strings.NewReplacer(
 		"<@"+botID+">", "",
 		"<@!"+botID+">", "",
@@ -65,11 +82,11 @@ func stripBotMention(content string) string {
 	return strings.TrimSpace(strings.Join(strings.Fields(replacer.Replace(content)), " "))
 }
 
-func determineIntent(message *discordgo.MessageCreate, ctx context.Context, client *openai.Client, isReplyFlow bool, history string, userSummary string) Intent {
-	cfg := config.GetConfig()
+func (h *AIHandler) determineIntent(message *discordgo.MessageCreate, ctx context.Context, isReplyFlow bool, history string, userSummary string) Intent {
+	cfg := h.config()
 	intentPrompt := buildIntentPrompt(cfg, message, isReplyFlow, history, userSummary)
 
-	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
+	resp, err := h.client.Responses.New(ctx, responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{
 			OfString: openai.String(intentPrompt),
 		},
@@ -109,12 +126,7 @@ func parseIntentOutput(cleanOutput string) Intent {
 	}
 }
 
-func getMessageHistory(discord *discordgo.Session, message *discordgo.MessageCreate, limit int) (string, error) {
-	botID := ""
-	if cfg := config.GetConfig(); cfg != nil {
-		botID = cfg.App.BotID
-	}
-
+func getMessageHistory(discord *discordgo.Session, message *discordgo.MessageCreate, limit int, botID string) (string, error) {
 	pastMessages, err := fetchMessageHistory(discord, message.ChannelID, limit)
 	if err != nil {
 		fmt.Println("error fetching past messages for interest scoring:", err)
@@ -186,12 +198,12 @@ func historyMessageContent(message *discordgo.Message) string {
 	return ""
 }
 
-func calculateInterestScore(message *discordgo.MessageCreate, ctx context.Context, client *openai.Client, discord *discordgo.Session, userSummary string) (float32, string) {
-	cfg := config.GetConfig()
-	combinedContent, _ := getMessageHistory(discord, message, cfg.AI.Interest.PastMessageLimit)
+func (h *AIHandler) calculateInterestScore(message *discordgo.MessageCreate, ctx context.Context, discord *discordgo.Session, userSummary string) (float32, string) {
+	cfg := h.config()
+	combinedContent, _ := getMessageHistory(discord, message, cfg.AI.Interest.PastMessageLimit, cfg.App.BotID)
 	interjectionPrompt := buildInterestScorePrompt(cfg, message.Content, combinedContent, userSummary)
 
-	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
+	resp, err := h.client.Responses.New(ctx, responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{
 			OfString: openai.String(interjectionPrompt),
 		},
@@ -283,10 +295,10 @@ func buildInterestScorePrompt(cfg *config.Config, messageContent, history string
 	return interjectionPrompt
 }
 
-func handlePotentialInterjection(message *discordgo.MessageCreate, ctx context.Context, client *openai.Client, discord *discordgo.Session, userSummary string) (bool, string) {
-	score, interjectionMsg := calculateInterestScore(message, ctx, client, discord, userSummary)
+func (h *AIHandler) handlePotentialInterjection(message *discordgo.MessageCreate, ctx context.Context, discord *discordgo.Session, userSummary string) (bool, string) {
+	score, interjectionMsg := h.calculateInterestScore(message, ctx, discord, userSummary)
 
-	if score > float32(config.GetConfig().AI.Interest.InterestScoreThreshold) {
+	if score > float32(h.config().AI.Interest.InterestScoreThreshold) {
 		return true, interjectionMsg
 	}
 

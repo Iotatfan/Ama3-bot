@@ -7,11 +7,12 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/iotatfan/sora-go/internal/config"
 	"github.com/iotatfan/sora-go/internal/repository"
+	"github.com/openai/openai-go/v3"
 )
 
-var defaultAIHandler = NewAIHandler(nil)
-
 type AIHandler struct {
+	cfg                *config.Config
+	client             *openai.Client
 	conversationMap    *ConversationMap
 	typingManager      *TypingManager
 	channelCooldown    channelCooldownTracker
@@ -34,6 +35,7 @@ type UserTracker struct {
 
 type ConversationMap struct {
 	mu        sync.RWMutex
+	cfg       *config.Config
 	convToRef map[string]conversationRef
 	refToConv map[string]string
 }
@@ -64,10 +66,12 @@ type directFlowLimiter struct {
 	chanLastReq map[string]time.Time
 }
 
-func NewAIHandler(userRepo repository.UserRepository) *AIHandler {
+func NewAIHandler(cfg *config.Config, client *openai.Client, userRepo repository.UserRepository) *AIHandler {
 	return &AIHandler{
+		cfg:             cfg,
+		client:          client,
 		userRepo:        userRepo,
-		conversationMap: NewConversationMap(),
+		conversationMap: NewConversationMap(cfg),
 		typingManager:   NewTypingManager(),
 		channelCooldown: channelCooldownTracker{
 			lastActive: make(map[string]time.Time),
@@ -82,11 +86,31 @@ func NewAIHandler(userRepo repository.UserRepository) *AIHandler {
 	}
 }
 
-func NewConversationMap() *ConversationMap {
+func NewConversationMap(cfg ...*config.Config) *ConversationMap {
+	var c *config.Config
+	if len(cfg) > 0 {
+		c = cfg[0]
+	}
+
 	return &ConversationMap{
+		cfg:       c,
 		convToRef: make(map[string]conversationRef),
 		refToConv: make(map[string]string),
 	}
+}
+
+func (h *AIHandler) config() *config.Config {
+	if h != nil && h.cfg != nil {
+		return h.cfg
+	}
+	return &config.Config{}
+}
+
+func (m *ConversationMap) config() *config.Config {
+	if m != nil && m.cfg != nil {
+		return m.cfg
+	}
+	return &config.Config{}
 }
 
 func NewTypingManager() *TypingManager {
@@ -106,7 +130,7 @@ func (m *ConversationMap) Set(convID, refID string) {
 	defer m.mu.Unlock()
 
 	m.pruneLocked()
-	if len(m.convToRef) >= maxConversationMappings() {
+	if len(m.convToRef) >= m.maxConversationMappings() {
 		// Keep retention simple and predictable when map grows too large.
 		m.convToRef = make(map[string]conversationRef)
 		m.refToConv = make(map[string]string)
@@ -154,7 +178,7 @@ func (m *ConversationMap) pruneLocked() {
 		return
 	}
 
-	threshold := time.Now().Add(-conversationTTL())
+	threshold := time.Now().Add(-m.conversationTTL())
 	for convID, ref := range m.convToRef {
 		if ref.updatedAt.Before(threshold) {
 			delete(m.convToRef, convID)
@@ -225,8 +249,8 @@ func (m *TypingManager) run(discord *discordgo.Session, channelID string, stopCh
 	}
 }
 
-func conversationTTL() time.Duration {
-	ttlSeconds := config.GetConfig().AI.Runtime.ConversationTTLSeconds
+func (m *ConversationMap) conversationTTL() time.Duration {
+	ttlSeconds := m.config().AI.Runtime.ConversationTTLSeconds
 	if ttlSeconds <= 0 {
 		return 6 * time.Hour
 	}
@@ -234,8 +258,8 @@ func conversationTTL() time.Duration {
 	return time.Duration(ttlSeconds) * time.Second
 }
 
-func maxConversationMappings() int {
-	limit := config.GetConfig().AI.Runtime.MaxConversationMappings
+func (m *ConversationMap) maxConversationMappings() int {
+	limit := m.config().AI.Runtime.MaxConversationMappings
 	if limit <= 0 {
 		return 1000
 	}
@@ -243,8 +267,8 @@ func maxConversationMappings() int {
 	return limit
 }
 
-func directFlowUserCooldown() time.Duration {
-	seconds := config.GetConfig().AI.Runtime.DirectFlowUserCooldown
+func (h *AIHandler) directFlowUserCooldown() time.Duration {
+	seconds := h.config().AI.Runtime.DirectFlowUserCooldown
 	if seconds <= 0 {
 		return 3 * time.Second
 	}
@@ -252,8 +276,8 @@ func directFlowUserCooldown() time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
-func directFlowChanCooldown() time.Duration {
-	seconds := config.GetConfig().AI.Runtime.DirectFlowChanCooldown
+func (h *AIHandler) directFlowChanCooldown() time.Duration {
+	seconds := h.config().AI.Runtime.DirectFlowChanCooldown
 	if seconds <= 0 {
 		return time.Second
 	}
@@ -261,8 +285,8 @@ func directFlowChanCooldown() time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
-func maxDirectLimiterEntries() int {
-	limit := config.GetConfig().AI.Runtime.MaxDirectLimiterEntries
+func (h *AIHandler) maxDirectLimiterEntries() int {
+	limit := h.config().AI.Runtime.MaxDirectLimiterEntries
 	if limit <= 0 {
 		return 4000
 	}
@@ -272,7 +296,7 @@ func maxDirectLimiterEntries() int {
 
 func (h *AIHandler) isNotCooldown(channelID string) bool {
 	// Check if any conversation has been active in the channel in the last cooldown period.
-	cooldown := time.Duration(config.GetConfig().AI.Interest.CooldownSeconds) * time.Second
+	cooldown := time.Duration(h.config().AI.Interest.CooldownSeconds) * time.Second
 	now := time.Now()
 
 	h.channelCooldown.mu.RLock()
@@ -298,7 +322,7 @@ func (h *AIHandler) updateChannelActivity(channelID string) {
 }
 
 func (h *AIHandler) allowDirectFlow(userID, channelID string) bool {
-	if !config.GetConfig().AI.Runtime.EnableDirectThrottle {
+	if !h.config().AI.Runtime.EnableDirectThrottle {
 		return true
 	}
 
@@ -307,17 +331,17 @@ func (h *AIHandler) allowDirectFlow(userID, channelID string) bool {
 	h.directLimiter.mu.Lock()
 	defer h.directLimiter.mu.Unlock()
 
-	if len(h.directLimiter.userLastReq) > maxDirectLimiterEntries() {
+	if len(h.directLimiter.userLastReq) > h.maxDirectLimiterEntries() {
 		h.directLimiter.userLastReq = make(map[string]time.Time)
 	}
-	if len(h.directLimiter.chanLastReq) > maxDirectLimiterEntries() {
+	if len(h.directLimiter.chanLastReq) > h.maxDirectLimiterEntries() {
 		h.directLimiter.chanLastReq = make(map[string]time.Time)
 	}
 
-	if last, ok := h.directLimiter.userLastReq[userID]; ok && now.Sub(last) < directFlowUserCooldown() {
+	if last, ok := h.directLimiter.userLastReq[userID]; ok && now.Sub(last) < h.directFlowUserCooldown() {
 		return false
 	}
-	if last, ok := h.directLimiter.chanLastReq[channelID]; ok && now.Sub(last) < directFlowChanCooldown() {
+	if last, ok := h.directLimiter.chanLastReq[channelID]; ok && now.Sub(last) < h.directFlowChanCooldown() {
 		return false
 	}
 

@@ -15,8 +15,8 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 )
 
-func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string, userSummary string, targetSummary string) {
-	if !havePermissionToSendMessages(discord, message) {
+func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, ctx context.Context, intent Intent, history string, userSummary string, targetSummary string) {
+	if !h.havePermissionToSendMessages(discord, message) {
 		return
 	}
 
@@ -24,17 +24,17 @@ func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discord
 	defer stopTyping()
 
 	if intent == IntentNoise {
-		reactToNoise(discord, message)
+		h.reactToNoise(discord, message)
 		return
 	}
 
-	conv, err := client.Conversations.New(ctx, conversations.ConversationNewParams{})
+	conv, err := h.client.Conversations.New(ctx, conversations.ConversationNewParams{})
 	if err != nil {
 		fmt.Println("error generating response:", err)
 		return
 	}
 
-	resp, replyTarget, err := generateAIResponse(message, client, ctx, conv.ID, intent, history, userSummary, targetSummary)
+	resp, replyTarget, err := h.generateAIResponse(message, ctx, conv.ID, intent, history, userSummary, targetSummary)
 	if err != nil {
 		fmt.Println("error generating response:", err)
 		return
@@ -43,8 +43,8 @@ func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discord
 	h.sendReplyMessage(discord, message, resp.OutputText(), replyTarget, conv.ID)
 }
 
-func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, intent Intent, history string, userSummary string, targetSummary string) {
-	if !havePermissionToSendMessages(discord, message) {
+func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *discordgo.MessageCreate, ctx context.Context, intent Intent, history string, userSummary string, targetSummary string) {
+	if !h.havePermissionToSendMessages(discord, message) {
 		return
 	}
 
@@ -52,7 +52,7 @@ func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *di
 	defer stopTyping()
 
 	if intent == IntentNoise {
-		reactToNoise(discord, message)
+		h.reactToNoise(discord, message)
 		return
 	}
 
@@ -63,7 +63,7 @@ func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *di
 	}
 	fmt.Println("Generating follow-up chat for conversation ID:", convID)
 
-	resp, replyTarget, err := generateAIResponse(message, client, ctx, convID, intent, history, userSummary, targetSummary)
+	resp, replyTarget, err := h.generateAIResponse(message, ctx, convID, intent, history, userSummary, targetSummary)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -72,19 +72,19 @@ func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *di
 	h.sendReplyMessage(discord, message, resp.OutputText(), replyTarget, convID)
 }
 
-func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client, ctx context.Context, convID string, intent Intent, history string, userSummary string, targetSummary string) (*responses.Response, *discordgo.MessageReference, error) {
+func (h *AIHandler) generateAIResponse(message *discordgo.MessageCreate, ctx context.Context, convID string, intent Intent, history string, userSummary string, targetSummary string) (*responses.Response, *discordgo.MessageReference, error) {
 	select {
 	case <-ctx.Done():
 		return nil, nil, ctx.Err()
 	default:
 	}
 
-	cfg := config.GetConfig()
+	cfg := h.config()
 	combinedContent, replyTarget := buildCombinedUserContent(cfg, message, intent, history, userSummary, targetSummary)
 	userContent := buildUserContent(combinedContent, message)
 	input := buildResponseInput(cfg, userContent)
 
-	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
+	resp, err := h.client.Responses.New(ctx, responses.ResponseNewParams{
 		Input: input,
 		Model: openai.ChatModelGPT5_4,
 		Conversation: responses.ResponseNewParamsConversationUnion{
@@ -105,7 +105,7 @@ func generateAIResponse(message *discordgo.MessageCreate, client *openai.Client,
 	if strings.Contains(err.Error(), "quota") || strings.Contains(err.Error(), "rate") || strings.Contains(err.Error(), "limit") {
 		fmt.Println("Fallback to lighter model")
 
-		fallbackResp, fallbackErr := client.Responses.New(ctx, responses.ResponseNewParams{
+		fallbackResp, fallbackErr := h.client.Responses.New(ctx, responses.ResponseNewParams{
 			Input: input,
 			Model: openai.ChatModelGPT5_4Mini,
 			Conversation: responses.ResponseNewParamsConversationUnion{
@@ -352,17 +352,17 @@ func smartSentenceChunk(text string, limit int) []string {
 	return chunks
 }
 
-func (h *AIHandler) GenerateUserSummary(username string, userSummary string, messages []string, client *openai.Client, ctx context.Context) (string, error) {
+func (h *AIHandler) GenerateUserSummary(username string, userSummary string, messages []string, ctx context.Context) (string, error) {
 	if len(messages) == 0 {
 		return "", nil
 	}
 
-	summaryPrompt := config.GetConfig().AI.Prompts.Summary
+	summaryPrompt := h.config().AI.Prompts.Summary
 	summaryPrompt = strings.Replace(summaryPrompt, "{{.OldSummary}}", userSummary, 1)
 	summaryPrompt = strings.Replace(summaryPrompt, "{{.NewMessages}}", strings.Join(messages, "\n"), 1)
 	summaryPrompt = strings.Replace(summaryPrompt, "{{.Username}}", username, 1)
 
-	resp, err := client.Responses.New(ctx, responses.ResponseNewParams{
+	resp, err := h.client.Responses.New(ctx, responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{
 			OfString: openai.String(summaryPrompt),
 		},
@@ -376,8 +376,8 @@ func (h *AIHandler) GenerateUserSummary(username string, userSummary string, mes
 	return resp.OutputText(), nil
 }
 
-func reactToNoise(discord *discordgo.Session, message *discordgo.MessageCreate) {
-	if !havePermissionToSendMessages(discord, message) {
+func (h *AIHandler) reactToNoise(discord *discordgo.Session, message *discordgo.MessageCreate) {
+	if !h.havePermissionToSendMessages(discord, message) {
 		return
 	}
 
@@ -392,9 +392,10 @@ func reactToNoise(discord *discordgo.Session, message *discordgo.MessageCreate) 
 	return
 }
 
-func havePermissionToSendMessages(discord *discordgo.Session, message *discordgo.MessageCreate) bool {
-	if message.GuildID != "" && (isBotMentioned(message) || isReplyToBot(discord, message)) {
-		perms, err := discord.UserChannelPermissions(config.GetConfig().App.BotID, message.ChannelID)
+func (h *AIHandler) havePermissionToSendMessages(discord *discordgo.Session, message *discordgo.MessageCreate) bool {
+	cfg := h.config()
+	if message.GuildID != "" && (isBotMentioned(cfg, message) || h.isReplyToBot(discord, message)) {
+		perms, err := discord.UserChannelPermissions(cfg.App.BotID, message.ChannelID)
 		if err != nil {
 			fmt.Println("Error checking permissions:", err)
 			return false

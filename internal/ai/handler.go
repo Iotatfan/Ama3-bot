@@ -5,15 +5,9 @@ import (
 	"fmt"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/iotatfan/sora-go/internal/config"
-	"github.com/openai/openai-go/v3"
 )
 
-func ParseMessage(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
-	defaultAIHandler.ParseMessage(discord, message, client, ctx)
-}
-
-func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.MessageCreate, client *openai.Client, ctx context.Context) {
+func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.MessageCreate, ctx context.Context) {
 	if message == nil {
 		return
 	}
@@ -22,7 +16,14 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 		return
 	}
 
-	if message.Author.ID == config.GetConfig().App.BotID || message.Author.Bot {
+	cfg := h.config()
+	client := h.client
+	if client == nil {
+		fmt.Println("OpenAI client is not configured")
+		return
+	}
+
+	if message.Author.ID == cfg.App.BotID || message.Author.Bot {
 		return
 	}
 
@@ -32,29 +33,29 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 
 	fmt.Printf("Received message user_id=%s channel_id=%s len=%d\n", message.Author.ID, message.ChannelID, len(message.Content))
 
-	if config.GetConfig().AI.Summary.Enabled && message.Content != "" {
-		if msgs, should := h.userMessageCounter.AddMessageAndCheckSummary(message.Author.ID, message.Content, config.GetConfig().AI.Summary.MessageThreshold); should {
-			go h.updateUserSummary(message.Author.ID, message.Author.Username, msgs, client, context.Background())
+	if cfg.AI.Summary.Enabled && message.Content != "" {
+		if msgs, should := h.userMessageCounter.AddMessageAndCheckSummary(message.Author.ID, message.Content, cfg.AI.Summary.MessageThreshold); should {
+			go h.updateUserSummary(message.Author.ID, message.Author.Username, msgs, context.Background())
 		}
 	}
 
 	userSummary, _ := h.getUserSummary(message.Author.ID)
 
-	if message.GuildID != "" && !isBotMentioned(message) && !isReplyToBot(discord, message) {
-		if config.GetConfig().AI.Interest.EnableInterestDetection {
+	if message.GuildID != "" && !isBotMentioned(cfg, message) && !h.isReplyToBot(discord, message) {
+		if cfg.AI.Interest.EnableInterestDetection {
 			if !h.isNotCooldown(message.ChannelID) {
 				fmt.Println("Channel is in cooldown, skipping interest check")
 				return
 			}
 
-			shouldHandle, history := handlePotentialInterjection(message, ctx, client, discord, userSummary)
+			shouldHandle, history := h.handlePotentialInterjection(message, ctx, discord, userSummary)
 			if shouldHandle {
 				h.updateChannelActivity(message.ChannelID)
 
 				fmt.Println("Message is not directed at bot and has high interest score, generating interjection response...")
-				message.Content = stripBotMention(message.Content)
+				message.Content = stripBotMention(cfg, message.Content)
 
-				h.generateNewChat(discord, message, client, ctx, IntentInterjection, history, userSummary, "")
+				h.generateNewChat(discord, message, ctx, IntentInterjection, history, userSummary, "")
 				return
 			}
 			fmt.Println("Message is not directed at bot and has low interest score, skipping...")
@@ -68,34 +69,34 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 		return
 	}
 
-	history, _ := getMessageHistory(discord, message, config.GetConfig().AI.Interest.PastMessageLimit)
+	history, _ := getMessageHistory(discord, message, cfg.AI.Interest.PastMessageLimit, cfg.App.BotID)
 
-	message.Content = stripBotMention(message.Content)
-	intent := determineIntent(message, ctx, client, message.ReferencedMessage != nil, history, userSummary)
+	message.Content = stripBotMention(cfg, message.Content)
+	intent := h.determineIntent(message, ctx, message.ReferencedMessage != nil, history, userSummary)
 	targetSummary := h.getMentionedTargetSummary(message, intent)
 
-	if message.MessageReference != nil && message.ReferencedMessage != nil && message.ReferencedMessage.Author.ID == config.GetConfig().App.BotID {
+	if message.MessageReference != nil && message.ReferencedMessage != nil && message.ReferencedMessage.Author.ID == cfg.App.BotID {
 		convID, ok := h.conversationMap.GetConversationByRef(message.MessageReference.MessageID)
 		if ok {
 			fmt.Println("Found conversation ID:", convID)
-			h.generateFollowUpChat(discord, message, client, ctx, intent, history, userSummary, targetSummary)
+			h.generateFollowUpChat(discord, message, ctx, intent, history, userSummary, targetSummary)
 			return
 		}
 	}
 
 	fmt.Println("Could not find conversation for reference message")
 	fmt.Println("Generating new chat...")
-	h.generateNewChat(discord, message, client, ctx, intent, history, userSummary, targetSummary)
+	h.generateNewChat(discord, message, ctx, intent, history, userSummary, targetSummary)
 }
 
-func (h *AIHandler) updateUserSummary(uid string, username string, msgs []string, client *openai.Client, ctx context.Context) {
+func (h *AIHandler) updateUserSummary(uid string, username string, msgs []string, ctx context.Context) {
 	userSummary, err := h.getUserSummary(uid)
 	if err != nil {
 		fmt.Println("Error fetching user summary:", err)
 		return
 	}
 
-	updatedUserSummary, err := h.GenerateUserSummary(username, userSummary, msgs, client, ctx)
+	updatedUserSummary, err := h.GenerateUserSummary(username, userSummary, msgs, ctx)
 	if err != nil {
 		fmt.Println("Error generating updated user summary:", err)
 		return
@@ -112,7 +113,7 @@ func (h *AIHandler) updateUserSummary(uid string, username string, msgs []string
 }
 
 func (h *AIHandler) getUserSummary(uid string) (string, error) {
-	if !config.GetConfig().AI.Summary.Enabled {
+	if !h.config().AI.Summary.Enabled {
 		return "", nil
 	}
 
@@ -146,7 +147,7 @@ func (h *AIHandler) getMentionedTargetSummary(message *discordgo.MessageCreate, 
 		return ""
 	}
 
-	targetUID := mentionedTargetUID(message, config.GetConfig().App.BotID)
+	targetUID := mentionedTargetUID(message, h.config().App.BotID)
 	if targetUID == "" {
 		return ""
 	}

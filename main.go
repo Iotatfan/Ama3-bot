@@ -28,7 +28,8 @@ func main() {
 		return
 	}
 
-	dsn := config.GetConfig().Database.DSN
+	cfg := config.GetConfig()
+	dsn := cfg.Database.DSN
 	var userRepo repository.UserRepository
 	if dsn == "" {
 		fmt.Println("Warning: Database DSN is empty. Proceeding without database.")
@@ -47,24 +48,23 @@ func main() {
 			userRepo = repository.NewUserRepository(db)
 		}
 	}
-	handler := aiHandler.NewAIHandler(userRepo)
-
-	discord, err := discordgo.New("Bot " + config.GetConfig().Auth.DiscordToken)
+	discord, err := discordgo.New("Bot " + cfg.Auth.DiscordToken)
 	if err != nil {
 		fmt.Println("Error creating discord session,", err)
 		return
 	}
 
 	aiClient := openai.NewClient(
-		option.WithAPIKey(config.GetConfig().Auth.OpenAIKey),
+		option.WithAPIKey(cfg.Auth.OpenAIKey),
 	)
+	handler := aiHandler.NewAIHandler(cfg, &aiClient, userRepo)
 
 	discord.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
-		handler.ParseMessage(s, m, &aiClient, ctx)
+		handler.ParseMessage(s, m, ctx)
 	})
 	discord.AddHandler(urlReplaceHandler.ParseUrl)
 
-	if config.GetConfig().App.EnableCommands {
+	if cfg.App.EnableCommands {
 		commands.RegisterCommands(discord)
 	}
 
