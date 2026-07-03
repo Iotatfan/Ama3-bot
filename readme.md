@@ -44,7 +44,7 @@ Ama3 is a high-performance Discord bot written in **Go**, designed for sophistic
     ```bash
     go run .
     ```
-3.  **Configure credentials:** Edit the generated `config.yml` with your Discord tokens, OpenAI key, and database connection string.
+3.  **Configure credentials:** Edit the generated `config/config.yml` with your Discord tokens, OpenAI key, and database connection string.
 
 ### Minimal Configuration
 ```yaml
@@ -69,6 +69,7 @@ database:
 
 # ── AI: Runtime ─────────────────────────────────────────────────────────────
 ai:
+  personality: "example"              # Load a specific personality from config/personalities/
   runtime:
     enable_direct_throttle: true      # Rate-limit direct-mention flows
     conversation_ttl_seconds: 21600   # How long idle conversation context is kept (6 h)
@@ -103,10 +104,11 @@ security:
 
 # Advanced Behavior
 
-Ama3 is highly tunable via `config.yml` or Viper environment variables (use `_` in place of `.`, e.g. `AI_RUNTIME_ENABLE_DIRECT_THROTTLE=true`).
+Ama3 is highly tunable via `config/config.yml` or Viper environment variables (use `_` in place of `.`, e.g. `AI_RUNTIME_ENABLE_DIRECT_THROTTLE=true`).
 
 | Key | Description |
 | :--- | :--- |
+| `ai.personality` | Loads personality-specific configuration from `config/personalities/<personality>.yml`. |
 | `ai.prompts.*` | Override the built-in system, developer, intent, interest, and summary prompt templates. |
 | `ai.interest.interest_score_threshold` | Tune how aggressively the bot interjects into conversations. |
 | `security.encryption_key` | Enable AES-256-GCM at-rest encryption for stored user summaries. |

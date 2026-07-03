@@ -1,5 +1,5 @@
 config.yml
 .env
 prompts_archive/
-prompts/
+config/personalities/*.yml
 .gocache/

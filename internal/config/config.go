@@ -72,10 +72,11 @@ type RuntimeConfig struct {
 }
 
 type AIConfig struct {
-	Prompts  PromptConfig   `mapstructure:"prompts" yaml:"prompts"`
-	Interest InterestConfig `mapstructure:"interest" yaml:"interest"`
-	Runtime  RuntimeConfig  `mapstructure:"runtime" yaml:"runtime"`
-	Summary  SummaryConfig  `mapstructure:"summary" yaml:"summary"`
+	Personality string         `mapstructure:"personality" yaml:"personality"`
+	Prompts     PromptConfig   `mapstructure:"prompts" yaml:"prompts"`
+	Interest    InterestConfig `mapstructure:"interest" yaml:"interest"`
+	Runtime     RuntimeConfig  `mapstructure:"runtime" yaml:"runtime"`
+	Summary     SummaryConfig  `mapstructure:"summary" yaml:"summary"`
 }
 
 type PromptConfig struct {
@@ -103,6 +104,8 @@ func LoadConfig() error {
 
 	viper.SetConfigName("config")
 	viper.SetConfigType("yml")
+	viper.AddConfigPath("config/personalities")
+	viper.AddConfigPath("config")
 	viper.AddConfigPath(".")
 
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
@@ -122,6 +125,15 @@ func LoadConfig() error {
 		return err
 	}
 
+	personalityFile := viper.GetString("ai.personality")
+	if personalityFile != "" {
+		viper.SetConfigName(personalityFile)
+
+		if err := viper.MergeInConfig(); err != nil {
+			return err
+		}
+	}
+
 	var cfg Config
 	err = viper.Unmarshal(&cfg)
 	if err != nil {
@@ -134,7 +146,7 @@ func LoadConfig() error {
 }
 
 func checkConfig() error {
-	if _, err := os.Stat("config.yml"); err == nil {
+	if _, err := os.Stat("config/config.yml"); err == nil {
 		return nil // file already exists
 	}
 

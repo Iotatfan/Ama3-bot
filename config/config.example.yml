@@ -1,0 +1,50 @@
+app:
+  owner_id: "change me"
+  bot_id: "change me"
+  role_id: "change me"
+  enable_commands: false
+
+auth:
+  discord_token: "change me"
+  openai_key: "change me"
+
+database:
+  dsn: "postgres://user:pass@localhost:5432/ama3?sslmode=disable"
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: "15m"
+
+platform:
+  whitelist_guilds: []
+  replacements:
+    enabled: false
+    twitter: "fxtwitter.com"
+    instagram: "d.vxinstagram.com"
+
+ai:
+  personality: "example" ## same as filename in personalities folder   
+  
+  interest:
+    interest_score_threshold: 0.7
+    past_message_limit: 15
+    cooldown_seconds: 600
+    enable_interest_detection: false
+
+  runtime:
+    enable_direct_throttle: false
+    conversation_ttl_seconds: 21600
+    max_conversation_mappings: 1000
+    direct_flow_user_cooldown_seconds: 3
+    direct_flow_channel_cooldown_seconds: 1
+    max_direct_limiter_entries: 4000
+
+  summary:
+    enabled: false
+    message_threshold: 30
+    summary_message_limit: 30
+
+security:
+  # AES-256 encryption key for at-rest encryption of user summary data.
+  # Must be exactly 64 hex characters (32 bytes). Generate with: openssl rand -hex 32
+  # Leave empty to disable encryption (summaries stored as plaintext).
+  encryption_key: ""
