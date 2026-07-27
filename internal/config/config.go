@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/iotatfan/sora-go/internal/helper"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
@@ -139,6 +140,13 @@ func LoadConfig() error {
 	if err != nil {
 		return err
 	}
+	cfg.AI.Prompts.System = helper.MinifyPrompt(cfg.AI.Prompts.System)
+	cfg.AI.Prompts.Developer = helper.MinifyPrompt(cfg.AI.Prompts.Developer)
+	cfg.AI.Prompts.IdentityRule = helper.MinifyPrompt(cfg.AI.Prompts.IdentityRule)
+	cfg.AI.Prompts.Summary = helper.MinifyPrompt(cfg.AI.Prompts.Summary)
+	cfg.AI.Prompts.Intent = helper.MinifyPrompt(cfg.AI.Prompts.Intent)
+	cfg.AI.Prompts.IntentReply = helper.MinifyPrompt(cfg.AI.Prompts.IntentReply)
+	cfg.AI.Prompts.InterestScore = helper.MinifyPrompt(cfg.AI.Prompts.InterestScore)
 
 	Cfg = &cfg
 

@@ -68,20 +68,6 @@ func (h *AIHandler) isReplyToBot(discord *discordgo.Session, message *discordgo.
 	return msg.Author.ID == botID
 }
 
-func stripBotMention(cfg *config.Config, content string) string {
-	botID := ""
-	if cfg != nil {
-		botID = cfg.App.BotID
-	}
-
-	replacer := strings.NewReplacer(
-		"<@"+botID+">", "",
-		"<@!"+botID+">", "",
-	)
-
-	return strings.TrimSpace(strings.Join(strings.Fields(replacer.Replace(content)), " "))
-}
-
 func (h *AIHandler) determineIntent(message *discordgo.MessageCreate, ctx context.Context, isReplyFlow bool, history string, userSummary string) Intent {
 	cfg := h.config()
 	intentPrompt := buildIntentPrompt(cfg, message, isReplyFlow, history, userSummary)

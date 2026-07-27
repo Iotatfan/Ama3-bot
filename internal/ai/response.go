@@ -9,6 +9,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/iotatfan/sora-go/internal/config"
+	"github.com/iotatfan/sora-go/internal/helper"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/conversations"
 	"github.com/openai/openai-go/v3/responses"
@@ -297,7 +298,7 @@ func buildResponseInput(cfg *config.Config, userContent []responses.ResponseInpu
 func (h *AIHandler) sendReplyMessage(discord *discordgo.Session, message *discordgo.MessageCreate, content string, replyTarget *discordgo.MessageReference, convID string) {
 	// Discord has a message character limit of 2000, so split long responses.
 	if len(content) > 2000 {
-		chunks := smartSentenceChunk(content, 2000)
+		chunks := helper.SmartSentenceChunk(content, 2000)
 		msgRef := message.Reference()
 
 		for _, chunk := range chunks {
@@ -320,36 +321,6 @@ func (h *AIHandler) sendReplyMessage(discord *discordgo.Session, message *discor
 		return
 	}
 	h.conversationMap.Set(convID, sent.ID)
-}
-
-func smartSentenceChunk(text string, limit int) []string {
-	var chunks []string
-
-	for len(text) > limit {
-		cut := -1
-
-		// Look backwards for sentence or paragraph end.
-		for i := limit; i > limit-400 && i > 0; i-- {
-			c := text[i]
-			if c == '.' || c == '!' || c == '?' || c == '\n' {
-				cut = i + 1
-				break
-			}
-		}
-
-		if cut == -1 {
-			cut = limit // fallback if no sentence end found
-		}
-
-		chunks = append(chunks, text[:cut])
-		text = text[cut:]
-	}
-
-	if len(text) > 0 {
-		chunks = append(chunks, text)
-	}
-
-	return chunks
 }
 
 func (h *AIHandler) GenerateUserSummary(username string, userSummary string, messages []string, ctx context.Context) (string, error) {

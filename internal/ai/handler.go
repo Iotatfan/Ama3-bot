@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/iotatfan/sora-go/internal/helper"
 )
 
 func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.MessageCreate, ctx context.Context) {
@@ -53,7 +54,7 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 				h.updateChannelActivity(message.ChannelID)
 
 				fmt.Println("Message is not directed at bot and has high interest score, generating interjection response...")
-				message.Content = stripBotMention(cfg, message.Content)
+				message.Content = helper.StripBotMention(cfg.App.BotID, message.Content)
 
 				h.generateNewChat(discord, message, ctx, IntentInterjection, history, userSummary, "")
 				return
@@ -71,7 +72,7 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 
 	history, _ := getMessageHistory(discord, message, cfg.AI.Interest.PastMessageLimit, cfg.App.BotID)
 
-	message.Content = stripBotMention(cfg, message.Content)
+	message.Content = helper.StripBotMention(cfg.App.BotID, message.Content)
 	intent := h.determineIntent(message, ctx, message.ReferencedMessage != nil, history, userSummary)
 	targetSummary := h.getMentionedTargetSummary(message, intent)
 
@@ -139,7 +140,7 @@ func (h *AIHandler) getUserSummary(uid string) (string, error) {
 	}
 
 	h.userMessageCounter.UpdateSummary(uid, summary)
-	return summary, nil
+	return helper.MinifyPrompt(summary), nil
 }
 
 func (h *AIHandler) getMentionedTargetSummary(message *discordgo.MessageCreate, intent Intent) string {
