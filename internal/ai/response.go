@@ -31,13 +31,13 @@ func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discord
 
 	conv, err := h.client.Conversations.New(ctx, conversations.ConversationNewParams{})
 	if err != nil {
-		fmt.Println("error generating response:", err)
+		h.sendOpenAIError(discord, message, err)
 		return
 	}
 
 	resp, replyTarget, err := h.generateAIResponse(message, ctx, conv.ID, intent, history, userSummary, targetSummary)
 	if err != nil {
-		fmt.Println("error generating response:", err)
+		h.sendOpenAIError(discord, message, err)
 		return
 	}
 
@@ -66,7 +66,7 @@ func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *di
 
 	resp, replyTarget, err := h.generateAIResponse(message, ctx, convID, intent, history, userSummary, targetSummary)
 	if err != nil {
-		fmt.Println(err)
+		h.sendOpenAIError(discord, message, err)
 		return
 	}
 
