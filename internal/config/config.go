@@ -18,6 +18,7 @@ type Config struct {
 	AI       AIConfig       `mapstructure:"ai" yaml:"ai"`
 	Database DatabaseConfig `mapstructure:"database" yaml:"database"`
 	Security SecurityConfig `mapstructure:"security" yaml:"security"`
+	Commands CommandsConfig `mapstructure:"commands" yaml:"commands"`
 }
 
 type SecurityConfig struct {
@@ -54,6 +55,17 @@ type ReplacementConfig struct {
 	Enabled   bool   `mapstructure:"enabled" yaml:"enabled"`
 	Twitter   string `mapstructure:"twitter" yaml:"twitter"`
 	Instagram string `mapstructure:"instagram" yaml:"instagram"`
+}
+
+type CommandsConfig struct {
+	Enabled bool               `mapstructure:"enabled" yaml:"enabled"`
+	Items   map[string]Command `mapstructure:"items" yaml:"items"`
+}
+
+type Command struct {
+	Name        string `mapstructure:"name" yaml:"name"`
+	Description string `mapstructure:"description" yaml:"description"`
+	Content     string `mapstructure:"content" yaml:"content"`
 }
 
 type InterestConfig struct {

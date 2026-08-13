@@ -5,6 +5,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/iotatfan/sora-go/internal/config"
+	"github.com/iotatfan/sora-go/internal/errorhandler"
 )
 
 var defaultCommandsHandler = NewCommandsHandler()
@@ -22,7 +23,7 @@ type CommandsHandler struct {
 }
 
 func RegisterCommands(s *discordgo.Session) {
-	defaultCommandsHandler.RegisterCommands(s)
+	defaultCommandsHandler.RegisterCommandsWithErrorHandler(s, errorhandler.New(nil))
 }
 
 func NewCommandsHandler() *CommandsHandler {
@@ -41,15 +42,15 @@ func NewCommandsHandlerWithConfig(getConfig func() *config.Config) *CommandsHand
 	h.registrations = []commandRegistration{
 		{
 			command: &discordgo.ApplicationCommand{
-				Name:        "help",
-				Description: "Get help about how to use me",
+				Name:        getConfig().Commands.Items["help"].Name,
+				Description: getConfig().Commands.Items["help"].Description,
 			},
 			handler: h.handleHelp,
 		},
 		{
 			command: &discordgo.ApplicationCommand{
-				Name:        "say",
-				Description: "*Warning. Send message as Ama3",
+				Name:        getConfig().Commands.Items["say"].Name,
+				Description: getConfig().Commands.Items["say"].Description,
 				Options: []*discordgo.ApplicationCommandOption{
 					{
 						Type:        discordgo.ApplicationCommandOptionString,
@@ -63,8 +64,8 @@ func NewCommandsHandlerWithConfig(getConfig func() *config.Config) *CommandsHand
 		},
 		{
 			command: &discordgo.ApplicationCommand{
-				Name:        "nick",
-				Description: "*Warning. Change bot's nickname",
+				Name:        getConfig().Commands.Items["nick"].Name,
+				Description: getConfig().Commands.Items["nick"].Description,
 				Options: []*discordgo.ApplicationCommandOption{
 					{
 						Type:        discordgo.ApplicationCommandOptionString,
@@ -78,8 +79,8 @@ func NewCommandsHandlerWithConfig(getConfig func() *config.Config) *CommandsHand
 		},
 		{
 			command: &discordgo.ApplicationCommand{
-				Name:        "mon3tr_release",
-				Description: "AMA3: Meltdown Sequence Authorized",
+				Name:        getConfig().Commands.Items["mon3tr_release"].Name,
+				Description: getConfig().Commands.Items["mon3tr_release"].Description,
 			},
 			handler: h.handleReleaseMon3tr,
 		},
@@ -89,6 +90,16 @@ func NewCommandsHandlerWithConfig(getConfig func() *config.Config) *CommandsHand
 }
 
 func (h *CommandsHandler) RegisterCommands(s *discordgo.Session) {
+	h.RegisterCommandsWithErrorHandler(s, errorhandler.New(nil))
+}
+
+// RegisterCommandsWithErrorHandler registers commands and protects command
+// callbacks with the application's shared error boundary.
+func (h *CommandsHandler) RegisterCommandsWithErrorHandler(s *discordgo.Session, errors *errorhandler.Handler) {
+	if errors == nil {
+		errors = errorhandler.New(nil)
+	}
+
 	fmt.Println("Registering commands")
 
 	cfg := h.getConfig()
@@ -110,7 +121,9 @@ func (h *CommandsHandler) RegisterCommands(s *discordgo.Session) {
 		}
 
 		if handler, ok := commandHandlers[i.ApplicationCommandData().Name]; ok {
-			handler(s, i)
+			errors.Run("discord.interaction."+i.ApplicationCommandData().Name, func() {
+				handler(s, i)
+			})
 		}
 	})
 
@@ -136,7 +149,7 @@ func (h *CommandsHandler) RegisterCommands(s *discordgo.Session) {
 }
 
 func (h *CommandsHandler) handleHelp(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	h.respondText(s, i, "Please @Me to chat with me! I can also respond to messages that reply to my messages. Sometimes I will change the link in Twitter and Instagram messages to something else ehe~. I'm a Goldfish so I may forget the context of our conversation anytime soon.")
+	h.respondText(s, i, h.getConfig().Commands.Items["help"].Content)
 }
 
 func (h *CommandsHandler) handleSay(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -188,7 +201,7 @@ func (h *CommandsHandler) handleReleaseMon3tr(s *discordgo.Session, i *discordgo
 		return
 	}
 
-	h.respondText(s, i, "https://tenor.com/view/arknights-mon3tr-wahh-cute-roar-gif-18351888906315697493")
+	h.respondText(s, i, h.getConfig().Commands.Items["mon3tr_release"].Content)
 }
 
 func (h *CommandsHandler) getStringOption(i *discordgo.InteractionCreate, optionName string) (string, bool) {

@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 
@@ -10,6 +10,7 @@ import (
 	aiHandler "github.com/iotatfan/sora-go/internal/ai"
 	"github.com/iotatfan/sora-go/internal/commands"
 	"github.com/iotatfan/sora-go/internal/config"
+	"github.com/iotatfan/sora-go/internal/errorhandler"
 	"github.com/iotatfan/sora-go/internal/models"
 	"github.com/iotatfan/sora-go/internal/repository"
 	urlReplaceHandler "github.com/iotatfan/sora-go/internal/url_replace"
@@ -22,9 +23,10 @@ import (
 
 func main() {
 	ctx := context.Background()
+	errors := errorhandler.New(slog.Default())
 
 	if err := config.LoadConfig(); err != nil {
-		fmt.Println("config load error:", err)
+		errors.Error("config.load", err)
 		return
 	}
 
@@ -32,25 +34,25 @@ func main() {
 	dsn := cfg.Database.DSN
 	var userRepo repository.UserRepository
 	if dsn == "" {
-		fmt.Println("Warning: Database DSN is empty. Proceeding without database.")
+		slog.Warn("database disabled", "reason", "empty DSN")
 	} else {
 		db, gormErr := gorm.Open(postgres.Open(dsn), &gorm.Config{
 			Logger: logger.Default.LogMode(logger.Silent),
 		})
 		if gormErr != nil {
-			fmt.Println("Warning: failed to connect to database:", gormErr)
-			fmt.Println("Proceeding without database support.")
+			errors.Error("database.connect", gormErr)
+			slog.Warn("proceeding without database support")
 		} else {
 
 			if err := db.AutoMigrate(&models.UserProfile{}); err != nil {
-				fmt.Println("Warning: database migration error:", err)
+				errors.Error("database.migrate", err)
 			}
 			userRepo = repository.NewUserRepository(db)
 		}
 	}
 	discord, err := discordgo.New("Bot " + cfg.Auth.DiscordToken)
 	if err != nil {
-		fmt.Println("Error creating discord session,", err)
+		errors.Error("discord.session.create", err)
 		return
 	}
 
@@ -60,21 +62,24 @@ func main() {
 	handler := aiHandler.NewAIHandler(cfg, &aiClient, userRepo)
 
 	discord.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
-		handler.ParseMessage(s, m, ctx)
+		errors.Run("discord.message", func() { handler.ParseMessage(s, m, ctx) })
 	})
-	discord.AddHandler(urlReplaceHandler.ParseUrl)
+	discord.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
+		errors.Run("discord.url_replace", func() { urlReplaceHandler.ParseUrl(s, m) })
+	})
 
 	if cfg.App.EnableCommands {
-		commands.RegisterCommands(discord)
+		commandsHandler := commands.NewCommandsHandler()
+		commandsHandler.RegisterCommandsWithErrorHandler(discord, errors)
 	}
 
 	if err := discord.Open(); err != nil {
-		fmt.Println("discord open error:", err)
+		errors.Error("discord.open", err)
 		return
 	}
 	defer discord.Close()
 
-	fmt.Println("Started")
+	slog.Info("started")
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	<-c
