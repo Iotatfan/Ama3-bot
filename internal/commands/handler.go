@@ -39,18 +39,35 @@ func NewCommandsHandlerWithConfig(getConfig func() *config.Config) *CommandsHand
 		getConfig: getConfig,
 	}
 
-	h.registrations = []commandRegistration{
+	return h
+}
+
+func (h *CommandsHandler) buildRegistrations(cfg *config.Config) []commandRegistration {
+	command := func(key string) config.Command {
+		item := cfg.Commands.Items[key]
+		if item.Name == "" {
+			item.Name = key
+		}
+		return item
+	}
+
+	help := command("help")
+	say := command("say")
+	nick := command("nick")
+	release := command("mon3tr_release")
+
+	return []commandRegistration{
 		{
 			command: &discordgo.ApplicationCommand{
-				Name:        getConfig().Commands.Items["help"].Name,
-				Description: getConfig().Commands.Items["help"].Description,
+				Name:        help.Name,
+				Description: help.Description,
 			},
 			handler: h.handleHelp,
 		},
 		{
 			command: &discordgo.ApplicationCommand{
-				Name:        getConfig().Commands.Items["say"].Name,
-				Description: getConfig().Commands.Items["say"].Description,
+				Name:        say.Name,
+				Description: say.Description,
 				Options: []*discordgo.ApplicationCommandOption{
 					{
 						Type:        discordgo.ApplicationCommandOptionString,
@@ -64,8 +81,8 @@ func NewCommandsHandlerWithConfig(getConfig func() *config.Config) *CommandsHand
 		},
 		{
 			command: &discordgo.ApplicationCommand{
-				Name:        getConfig().Commands.Items["nick"].Name,
-				Description: getConfig().Commands.Items["nick"].Description,
+				Name:        nick.Name,
+				Description: nick.Description,
 				Options: []*discordgo.ApplicationCommandOption{
 					{
 						Type:        discordgo.ApplicationCommandOptionString,
@@ -79,14 +96,12 @@ func NewCommandsHandlerWithConfig(getConfig func() *config.Config) *CommandsHand
 		},
 		{
 			command: &discordgo.ApplicationCommand{
-				Name:        getConfig().Commands.Items["mon3tr_release"].Name,
-				Description: getConfig().Commands.Items["mon3tr_release"].Description,
+				Name:        release.Name,
+				Description: release.Description,
 			},
 			handler: h.handleReleaseMon3tr,
 		},
 	}
-
-	return h
 }
 
 func (h *CommandsHandler) RegisterCommands(s *discordgo.Session) {
@@ -107,6 +122,7 @@ func (h *CommandsHandler) RegisterCommandsWithErrorHandler(s *discordgo.Session,
 		fmt.Println("Cannot register commands: missing bot ID in config")
 		return
 	}
+	h.registrations = h.buildRegistrations(cfg)
 
 	commandHandlers := make(map[string]commandHandler, len(h.registrations))
 

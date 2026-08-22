@@ -10,6 +10,7 @@ import (
 	"github.com/iotatfan/sora-go/internal/config"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 )
 
 type Intent string
@@ -33,7 +34,7 @@ func isBotMentioned(cfg *config.Config, message *discordgo.MessageCreate) bool {
 
 	botID := cfg.App.BotID
 	for _, u := range message.Mentions {
-		if u.ID == botID {
+		if u != nil && u.ID == botID {
 			return true
 		}
 	}
@@ -49,13 +50,16 @@ func isBotMentioned(cfg *config.Config, message *discordgo.MessageCreate) bool {
 }
 
 func (h *AIHandler) isReplyToBot(discord *discordgo.Session, message *discordgo.MessageCreate) bool {
-	if message.MessageReference == nil || message.MessageReference.MessageID == "" {
+	if message == nil || message.MessageReference == nil || message.MessageReference.MessageID == "" {
 		return false
 	}
 
 	botID := h.config().App.BotID
 	if message.ReferencedMessage != nil {
-		return message.ReferencedMessage.Author.ID == botID
+		return isMessageAuthor(message.ReferencedMessage, botID)
+	}
+	if discord == nil {
+		return false
 	}
 
 	refID := message.MessageReference.MessageID
@@ -65,7 +69,11 @@ func (h *AIHandler) isReplyToBot(discord *discordgo.Session, message *discordgo.
 		return false
 	}
 
-	return msg.Author.ID == botID
+	return isMessageAuthor(msg, botID)
+}
+
+func isMessageAuthor(message *discordgo.Message, authorID string) bool {
+	return message != nil && message.Author != nil && message.Author.ID == authorID
 }
 
 func (h *AIHandler) determineIntent(message *discordgo.MessageCreate, ctx context.Context, isReplyFlow bool, history string, userSummary string) Intent {
@@ -77,6 +85,11 @@ func (h *AIHandler) determineIntent(message *discordgo.MessageCreate, ctx contex
 			OfString: openai.String(intentPrompt),
 		},
 		Model: openai.ChatModelGPT5_4Mini,
+		Metadata: shared.Metadata{
+			"discord_user_id":    message.Author.ID,
+			"discord_guild_id":   message.GuildID,
+			"discord_channel_id": message.ChannelID,
+		},
 	})
 	if err != nil {
 		fmt.Println("error determining intent:", err)
@@ -132,6 +145,9 @@ func formatMessageHistory(pastMessages []*discordgo.Message, currentMessageID, b
 	// Build history in chronological order, excluding the current message.
 	for i := len(pastMessages) - 1; i >= 0; i-- {
 		m := pastMessages[i]
+		if m == nil {
+			continue
+		}
 		if m.ID == currentMessageID {
 			continue
 		}
@@ -194,6 +210,11 @@ func (h *AIHandler) calculateInterestScore(message *discordgo.MessageCreate, ctx
 			OfString: openai.String(interjectionPrompt),
 		},
 		Model: openai.ChatModelGPT5_4Mini,
+		Metadata: shared.Metadata{
+			"discord_user_id":    message.Author.ID,
+			"discord_guild_id":   message.GuildID,
+			"discord_channel_id": message.ChannelID,
+		},
 	})
 	if err != nil {
 		fmt.Println("error calculating interest score:", err)
@@ -235,6 +256,9 @@ func buildIntentPrompt(cfg *config.Config, message *discordgo.MessageCreate, isR
 }
 
 func getEnrichedContent(message *discordgo.MessageCreate) string {
+	if message == nil {
+		return ""
+	}
 	content := message.Content
 
 	var tags []string

@@ -36,7 +36,7 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 
 	if cfg.AI.Summary.Enabled && message.Content != "" {
 		if msgs, should := h.userMessageCounter.AddMessageAndCheckSummary(message.Author.ID, message.Content, cfg.AI.Summary.MessageThreshold); should {
-			go h.updateUserSummary(message.Author.ID, message.Author.Username, msgs, context.Background())
+			go h.updateUserSummary(message.Author.ID, message.Author.Username, msgs, message.GuildID, message.ChannelID, context.Background())
 		}
 	}
 
@@ -76,7 +76,7 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 	intent := h.determineIntent(message, ctx, message.ReferencedMessage != nil, history, userSummary)
 	targetSummary := h.getMentionedTargetSummary(message, intent)
 
-	if message.MessageReference != nil && message.ReferencedMessage != nil && message.ReferencedMessage.Author.ID == cfg.App.BotID {
+	if message.MessageReference != nil && isMessageAuthor(message.ReferencedMessage, cfg.App.BotID) {
 		convID, ok := h.conversationMap.GetConversationByRef(message.MessageReference.MessageID)
 		if ok {
 			fmt.Println("Found conversation ID:", convID)
@@ -90,14 +90,14 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 	h.generateNewChat(discord, message, ctx, intent, history, userSummary, targetSummary)
 }
 
-func (h *AIHandler) updateUserSummary(uid string, username string, msgs []string, ctx context.Context) {
+func (h *AIHandler) updateUserSummary(uid string, username string, msgs []string, guildID string, channelID string, ctx context.Context) {
 	userSummary, err := h.getUserSummary(uid)
 	if err != nil {
 		fmt.Println("Error fetching user summary:", err)
 		return
 	}
 
-	updatedUserSummary, err := h.GenerateUserSummary(username, userSummary, msgs, ctx)
+	updatedUserSummary, err := h.GenerateUserSummary(uid, username, userSummary, msgs, guildID, channelID, ctx)
 	if err != nil {
 		fmt.Println("Error generating updated user summary:", err)
 		return

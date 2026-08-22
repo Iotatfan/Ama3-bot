@@ -97,6 +97,11 @@ func (h *AIHandler) generateAIResponse(message *discordgo.MessageCreate, ctx con
 			Effort: conversations.ReasoningEffortMedium,
 		},
 		PromptCacheRetention: responses.ResponseNewParamsPromptCacheRetention24h,
+		Metadata: shared.Metadata{
+			"discord_user_id":    message.Author.ID,
+			"discord_guild_id":   message.GuildID,
+			"discord_channel_id": message.ChannelID,
+		},
 	})
 
 	if err == nil {
@@ -116,6 +121,12 @@ func (h *AIHandler) generateAIResponse(message *discordgo.MessageCreate, ctx con
 			},
 			Reasoning: shared.ReasoningParam{
 				Effort: conversations.ReasoningEffortMedium,
+			},
+			PromptCacheRetention: responses.ResponseNewParamsPromptCacheRetention24h,
+			Metadata: shared.Metadata{
+				"discord_user_id":    message.Author.ID,
+				"discord_guild_id":   message.GuildID,
+				"discord_channel_id": message.ChannelID,
 			},
 		})
 		if fallbackErr != nil {
@@ -323,7 +334,7 @@ func (h *AIHandler) sendReplyMessage(discord *discordgo.Session, message *discor
 	h.conversationMap.Set(convID, sent.ID)
 }
 
-func (h *AIHandler) GenerateUserSummary(username string, userSummary string, messages []string, ctx context.Context) (string, error) {
+func (h *AIHandler) GenerateUserSummary(uid string, username string, userSummary string, messages []string, guildID string, channelID string, ctx context.Context) (string, error) {
 	if len(messages) == 0 {
 		return "", nil
 	}
@@ -337,7 +348,13 @@ func (h *AIHandler) GenerateUserSummary(username string, userSummary string, mes
 		Input: responses.ResponseNewParamsInputUnion{
 			OfString: openai.String(summaryPrompt),
 		},
-		Model: openai.ChatModelGPT5_4Mini,
+		Model:                openai.ChatModelGPT5_4Mini,
+		PromptCacheRetention: responses.ResponseNewParamsPromptCacheRetention24h,
+		Metadata: shared.Metadata{
+			"discord_user_id":    uid,
+			"discord_guild_id":   guildID,
+			"discord_channel_id": channelID,
+		},
 	})
 	if err != nil {
 		fmt.Println("error determining intent:", err)

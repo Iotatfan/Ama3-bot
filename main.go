@@ -68,7 +68,7 @@ func main() {
 		errors.Run("discord.url_replace", func() { urlReplaceHandler.ParseUrl(s, m) })
 	})
 
-	if cfg.App.EnableCommands {
+	if cfg.Commands.Enabled {
 		commandsHandler := commands.NewCommandsHandler()
 		commandsHandler.RegisterCommandsWithErrorHandler(discord, errors)
 	}
