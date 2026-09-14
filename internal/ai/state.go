@@ -19,6 +19,18 @@ type AIHandler struct {
 	directLimiter      directFlowLimiter
 	userMessageCounter *UserTracker
 	userRepo           repository.UserRepository
+	memoryRepo         repository.MemoryRepository
+	memoryBuffer       *MemoryBuffer
+}
+
+type PendingMemoryMessage struct {
+	ID, Content, GuildID, ChannelID string
+	CreatedAt                       time.Time
+}
+type MemoryBuffer struct {
+	mu    sync.Mutex
+	items map[string][]PendingMemoryMessage
+	first map[string]time.Time
 }
 
 type UserStats struct {
@@ -66,11 +78,17 @@ type directFlowLimiter struct {
 	chanLastReq map[string]time.Time
 }
 
-func NewAIHandler(cfg *config.Config, client *openai.Client, userRepo repository.UserRepository) *AIHandler {
+func NewAIHandler(cfg *config.Config, client *openai.Client, userRepo repository.UserRepository, memoryRepos ...repository.MemoryRepository) *AIHandler {
+	var memoryRepo repository.MemoryRepository
+	if len(memoryRepos) > 0 {
+		memoryRepo = memoryRepos[0]
+	}
 	return &AIHandler{
 		cfg:             cfg,
 		client:          client,
 		userRepo:        userRepo,
+		memoryRepo:      memoryRepo,
+		memoryBuffer:    &MemoryBuffer{items: make(map[string][]PendingMemoryMessage), first: make(map[string]time.Time)},
 		conversationMap: NewConversationMap(cfg),
 		typingManager:   NewTypingManager(),
 		channelCooldown: channelCooldownTracker{

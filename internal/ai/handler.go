@@ -71,6 +71,14 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 	}
 
 	history, _ := getMessageHistory(discord, message, cfg.AI.Interest.PastMessageLimit, cfg.App.BotID)
+	memories, selfMemories, memErr := h.retrieveMemories(ctx, message, history, userSummary)
+	if memErr != nil {
+		fmt.Println("long-term memory retrieval failed:", memErr)
+	}
+	longMemory := formatMemories(memories, cfg.AI.Memory.MaxInjectedCharacters)
+	selfMemory := formatSelfMemories(selfMemories, cfg.AI.Memory.SelfMaxInjectedCharacters)
+	fmt.Printf("memory prompt injection user_id=%s retrieved=%d injected=%t injected_characters=%d\n", message.Author.ID, len(memories), longMemory != "", len(longMemory))
+	h.queueMemory(message, userSummary)
 
 	message.Content = helper.StripBotMention(cfg.App.BotID, message.Content)
 	intent := h.determineIntent(message, ctx, message.ReferencedMessage != nil, history, userSummary)
@@ -80,14 +88,14 @@ func (h *AIHandler) ParseMessage(discord *discordgo.Session, message *discordgo.
 		convID, ok := h.conversationMap.GetConversationByRef(message.MessageReference.MessageID)
 		if ok {
 			fmt.Println("Found conversation ID:", convID)
-			h.generateFollowUpChat(discord, message, ctx, intent, history, userSummary, targetSummary)
+			h.generateFollowUpChat(discord, message, ctx, intent, history, userSummary, targetSummary, longMemory, selfMemory)
 			return
 		}
 	}
 
 	fmt.Println("Could not find conversation for reference message")
 	fmt.Println("Generating new chat...")
-	h.generateNewChat(discord, message, ctx, intent, history, userSummary, targetSummary)
+	h.generateNewChat(discord, message, ctx, intent, history, userSummary, targetSummary, longMemory, selfMemory)
 }
 
 func (h *AIHandler) updateUserSummary(uid string, username string, msgs []string, guildID string, channelID string, ctx context.Context) {

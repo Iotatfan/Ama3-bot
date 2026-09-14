@@ -31,8 +31,16 @@ func main() {
 	}
 
 	cfg := config.GetConfig()
+	slog.Info("memory configuration",
+		"enabled", cfg.AI.Memory.Enabled,
+		"write_enabled", cfg.AI.Memory.WriteEnabled,
+		"retrieval_mode", cfg.AI.Memory.RetrievalMode,
+		"embedding_model", cfg.AI.Memory.EmbeddingModel,
+		"encryption_enabled", cfg.AI.Memory.EncryptContent,
+	)
 	dsn := cfg.Database.DSN
 	var userRepo repository.UserRepository
+	var memoryRepo repository.MemoryRepository
 	if dsn == "" {
 		slog.Warn("database disabled", "reason", "empty DSN")
 	} else {
@@ -43,11 +51,28 @@ func main() {
 			errors.Error("database.connect", gormErr)
 			slog.Warn("proceeding without database support")
 		} else {
-
+			if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
+				errors.Error("database.vector_extension", err)
+			}
+			if err := db.Exec("CREATE EXTENSION IF NOT EXISTS pgcrypto").Error; err != nil {
+				errors.Error("database.pgcrypto_extension", err)
+			}
+			if err := db.Exec(`CREATE TABLE IF NOT EXISTS user_memories (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), discord_uid varchar(64) NOT NULL, content text NOT NULL, category varchar(128) NOT NULL, confidence double precision NOT NULL, importance double precision NOT NULL, embedding vector(1536) NOT NULL, source_message_id varchar(64), source_guild_id varchar(64), source_channel_id varchar(64), active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL)`).Error; err != nil {
+				errors.Error("database.memory_migrate", err)
+			}
+			if err := db.Exec("CREATE INDEX IF NOT EXISTS idx_user_memories_uid_active ON user_memories(discord_uid, active)").Error; err != nil {
+				errors.Error("database.memory_index", err)
+			}
+			db.Exec(`CREATE TABLE IF NOT EXISTS self_memories (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), content text NOT NULL, category varchar(64) NOT NULL, confidence double precision NOT NULL, importance double precision NOT NULL, source_message_id varchar(64), source_guild_id varchar(64), source_channel_id varchar(64), active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL)`)
+			db.Exec("ALTER TABLE self_memories ADD COLUMN IF NOT EXISTS embedding vector(1536)")
+			db.Exec(`CREATE TABLE IF NOT EXISTS self_memory_conflicts (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), self_memory_id uuid NOT NULL REFERENCES self_memories(id), proposed_content text NOT NULL, source_message_id varchar(64), status varchar(16) NOT NULL DEFAULT 'unresolved', resolved_by varchar(64), resolved_at timestamptz, created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL)`)
+			db.Exec("CREATE INDEX IF NOT EXISTS idx_self_memories_active ON self_memories(active)")
+			db.Exec("CREATE INDEX IF NOT EXISTS idx_self_memory_conflicts_status ON self_memory_conflicts(status)")
 			if err := db.AutoMigrate(&models.UserProfile{}); err != nil {
 				errors.Error("database.migrate", err)
 			}
 			userRepo = repository.NewUserRepository(db)
+			memoryRepo = repository.NewMemoryRepository(db, cfg.AI.Memory.EncryptContent)
 		}
 	}
 	discord, err := discordgo.New("Bot " + cfg.Auth.DiscordToken)
@@ -59,7 +84,7 @@ func main() {
 	aiClient := openai.NewClient(
 		option.WithAPIKey(cfg.Auth.OpenAIKey),
 	)
-	handler := aiHandler.NewAIHandler(cfg, &aiClient, userRepo)
+	handler := aiHandler.NewAIHandler(cfg, &aiClient, userRepo, memoryRepo)
 
 	discord.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		errors.Run("discord.message", func() { handler.ParseMessage(s, m, ctx) })
@@ -69,7 +94,7 @@ func main() {
 	})
 
 	if cfg.Commands.Enabled {
-		commandsHandler := commands.NewCommandsHandler()
+		commandsHandler := commands.NewCommandsHandlerWithMemoryRepository(memoryRepo)
 		commandsHandler.RegisterCommandsWithErrorHandler(discord, errors)
 	}
 

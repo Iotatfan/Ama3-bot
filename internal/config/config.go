@@ -89,6 +89,40 @@ type AIConfig struct {
 	Interest    InterestConfig `mapstructure:"interest" yaml:"interest"`
 	Runtime     RuntimeConfig  `mapstructure:"runtime" yaml:"runtime"`
 	Summary     SummaryConfig  `mapstructure:"summary" yaml:"summary"`
+	Memory      MemoryConfig   `mapstructure:"memory" yaml:"memory"`
+}
+
+type MemoryConfig struct {
+	LocalGateEnabled             bool    `mapstructure:"local_gate_enabled" yaml:"local_gate_enabled"`
+	LocalGateMinQueryTokens      int     `mapstructure:"local_gate_min_query_tokens" yaml:"local_gate_min_query_tokens"`
+	SelfMinSimilarity            float64 `mapstructure:"self_min_similarity" yaml:"self_min_similarity"`
+	SelfEnabled                  bool    `mapstructure:"self_enabled" yaml:"self_enabled"`
+	SelfExtractionModel          string  `mapstructure:"self_extraction_model" yaml:"self_extraction_model"`
+	SelfMaxInjected              int     `mapstructure:"self_max_injected" yaml:"self_max_injected"`
+	SelfMaxInjectedCharacters    int     `mapstructure:"self_max_injected_characters" yaml:"self_max_injected_characters"`
+	ConflictNotificationsEnabled bool    `mapstructure:"conflict_notifications_enabled" yaml:"conflict_notifications_enabled"`
+	AdminChannelID               string  `mapstructure:"admin_channel_id" yaml:"admin_channel_id"`
+	Enabled                      bool    `mapstructure:"enabled" yaml:"enabled"`
+	WriteEnabled                 bool    `mapstructure:"write_enabled" yaml:"write_enabled"`
+	RetrievalMode                string  `mapstructure:"retrieval_mode" yaml:"retrieval_mode"`
+	ExtractionModel              string  `mapstructure:"extraction_model" yaml:"extraction_model"`
+	RetrievalGateModel           string  `mapstructure:"retrieval_gate_model" yaml:"retrieval_gate_model"`
+	EmbeddingModel               string  `mapstructure:"embedding_model" yaml:"embedding_model"`
+	EmbeddingDimensions          int     `mapstructure:"embedding_dimensions" yaml:"embedding_dimensions"`
+	MaxCandidates                int     `mapstructure:"max_candidates" yaml:"max_candidates"`
+	MaxInjected                  int     `mapstructure:"max_injected" yaml:"max_injected"`
+	MaxInjectedCharacters        int     `mapstructure:"max_injected_characters" yaml:"max_injected_characters"`
+	MinSimilarity                float64 `mapstructure:"min_similarity" yaml:"min_similarity"`
+	MinConfidence                float64 `mapstructure:"min_confidence" yaml:"min_confidence"`
+	EncryptContent               bool    `mapstructure:"encrypt_content" yaml:"encrypt_content"`
+	ExtractionBatchSize          int     `mapstructure:"extraction_batch_size" yaml:"extraction_batch_size"`
+	ExtractionFlushSeconds       int     `mapstructure:"extraction_flush_seconds" yaml:"extraction_flush_seconds"`
+	ExtractionContextCharacters  int     `mapstructure:"extraction_context_characters" yaml:"extraction_context_characters"`
+	CandidatePoolSize            int     `mapstructure:"candidate_pool_size" yaml:"candidate_pool_size"`
+	VectorWeight                 float64 `mapstructure:"vector_weight" yaml:"vector_weight"`
+	KeywordWeight                float64 `mapstructure:"keyword_weight" yaml:"keyword_weight"`
+	MinCombinedScore             float64 `mapstructure:"min_combined_score" yaml:"min_combined_score"`
+	MinKeywordScore              float64 `mapstructure:"min_keyword_score" yaml:"min_keyword_score"`
 }
 
 type PromptConfig struct {
@@ -124,6 +158,35 @@ func LoadConfig() error {
 	viper.SetDefault("platform.replacements.enabled", false)
 	viper.SetDefault("ai.interest.enable_interest_detection", false)
 	viper.SetDefault("ai.summary.enabled", false)
+	viper.SetDefault("ai.memory.enabled", false)
+	viper.SetDefault("ai.memory.local_gate_enabled", true)
+	viper.SetDefault("ai.memory.local_gate_min_query_tokens", 3)
+	viper.SetDefault("ai.memory.self_min_similarity", 0.78)
+	viper.SetDefault("ai.memory.self_enabled", false)
+	viper.SetDefault("ai.memory.self_extraction_model", "gpt-5-mini")
+	viper.SetDefault("ai.memory.self_max_injected", 10)
+	viper.SetDefault("ai.memory.self_max_injected_characters", 5000)
+	viper.SetDefault("ai.memory.conflict_notifications_enabled", true)
+	viper.SetDefault("ai.memory.write_enabled", true)
+	viper.SetDefault("ai.memory.retrieval_mode", "off")
+	viper.SetDefault("ai.memory.extraction_model", "gpt-5-mini")
+	viper.SetDefault("ai.memory.retrieval_gate_model", "gpt-5-mini")
+	viper.SetDefault("ai.memory.embedding_model", "text-embedding-3-small")
+	viper.SetDefault("ai.memory.embedding_dimensions", 1536)
+	viper.SetDefault("ai.memory.max_candidates", 20)
+	viper.SetDefault("ai.memory.max_injected", 5)
+	viper.SetDefault("ai.memory.max_injected_characters", 3000)
+	viper.SetDefault("ai.memory.min_similarity", 0.78)
+	viper.SetDefault("ai.memory.min_confidence", 0.65)
+	viper.SetDefault("ai.memory.encrypt_content", true)
+	viper.SetDefault("ai.memory.extraction_batch_size", 5)
+	viper.SetDefault("ai.memory.extraction_flush_seconds", 300)
+	viper.SetDefault("ai.memory.extraction_context_characters", 6000)
+	viper.SetDefault("ai.memory.candidate_pool_size", 50)
+	viper.SetDefault("ai.memory.vector_weight", 0.65)
+	viper.SetDefault("ai.memory.keyword_weight", 0.35)
+	viper.SetDefault("ai.memory.min_combined_score", 0.35)
+	viper.SetDefault("ai.memory.min_keyword_score", 0.20)
 	viper.SetDefault("ai.runtime.enable_direct_throttle", true)
 	viper.SetDefault("ai.runtime.conversation_ttl_seconds", 21600)
 	viper.SetDefault("ai.runtime.max_conversation_mappings", 1000)
