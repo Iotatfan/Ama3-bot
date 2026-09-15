@@ -13,20 +13,6 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 )
 
-type Intent string
-
-const (
-	IntentDirect            Intent = "direct"
-	IntentReplyToTarget     Intent = "reply_to_target"
-	IntentAskAbout          Intent = "ask_about_target"
-	IntentValidationRequest Intent = "validation_request"
-	IntentActionOnSelf      Intent = "action_on_self"
-	IntentInterjection      Intent = "interjection"
-	IntentNoise             Intent = "noise"
-	IntentProvocation       Intent = "provocation"
-	Unknown                 Intent = "unknown"
-)
-
 func isBotMentioned(cfg *config.Config, message *discordgo.MessageCreate) bool {
 	if cfg == nil || message == nil {
 		return false
@@ -74,55 +60,6 @@ func (h *AIHandler) isReplyToBot(discord *discordgo.Session, message *discordgo.
 
 func isMessageAuthor(message *discordgo.Message, authorID string) bool {
 	return message != nil && message.Author != nil && message.Author.ID == authorID
-}
-
-func (h *AIHandler) determineIntent(message *discordgo.MessageCreate, ctx context.Context, isReplyFlow bool, history string, userSummary string) Intent {
-	cfg := h.config()
-	intentPrompt := buildIntentPrompt(cfg, message, isReplyFlow, history, userSummary)
-
-	resp, err := h.client.Responses.New(ctx, responses.ResponseNewParams{
-		Input: responses.ResponseNewParamsInputUnion{
-			OfString: openai.String(intentPrompt),
-		},
-		Model: openai.ChatModelGPT5_4Mini,
-		Metadata: shared.Metadata{
-			"discord_user_id":    message.Author.ID,
-			"discord_guild_id":   message.GuildID,
-			"discord_channel_id": message.ChannelID,
-		},
-	})
-	if err != nil {
-		fmt.Println("error determining intent:", err)
-		return IntentDirect
-	}
-
-	cleanOutput := strings.ToLower(strings.TrimSpace(resp.OutputText()))
-	fmt.Println("Determined intent:", cleanOutput)
-
-	return parseIntentOutput(cleanOutput)
-}
-
-func parseIntentOutput(cleanOutput string) Intent {
-	switch cleanOutput {
-	case "direct":
-		return IntentDirect
-	case "reply_to_target":
-		return IntentReplyToTarget
-	case "ask_about_target":
-		return IntentAskAbout
-	case "validation_request":
-		return IntentValidationRequest
-	case "action_on_self":
-		return IntentActionOnSelf
-	case "interjection":
-		return IntentInterjection
-	case "noise":
-		return IntentNoise
-	case "provocation":
-		return IntentProvocation
-	default:
-		return Unknown
-	}
 }
 
 func getMessageHistory(discord *discordgo.Session, message *discordgo.MessageCreate, limit int, botID string) (string, error) {
@@ -205,16 +142,22 @@ func (h *AIHandler) calculateInterestScore(message *discordgo.MessageCreate, ctx
 	combinedContent, _ := getMessageHistory(discord, message, cfg.AI.Interest.PastMessageLimit, cfg.App.BotID)
 	interjectionPrompt := buildInterestScorePrompt(cfg, message.Content, combinedContent, userSummary)
 
-	resp, err := h.client.Responses.New(ctx, responses.ResponseNewParams{
-		Input: responses.ResponseNewParamsInputUnion{
-			OfString: openai.String(interjectionPrompt),
-		},
-		Model: openai.ChatModelGPT5_4Mini,
-		Metadata: shared.Metadata{
-			"discord_user_id":    message.Author.ID,
-			"discord_guild_id":   message.GuildID,
-			"discord_channel_id": message.ChannelID,
-		},
+	var resp *responses.Response
+	err := h.runModelCall(ctx, "interest", func() error {
+		var callErr error
+		resp, callErr = h.client.Responses.New(ctx, responses.ResponseNewParams{
+			Input: responses.ResponseNewParamsInputUnion{
+				OfString: openai.String(interjectionPrompt),
+			},
+			Model:           openai.ChatModelGPT5_4Mini,
+			MaxOutputTokens: openai.Int(10),
+			Metadata: shared.Metadata{
+				"discord_user_id":    message.Author.ID,
+				"discord_guild_id":   message.GuildID,
+				"discord_channel_id": message.ChannelID,
+			},
+		})
+		return callErr
 	})
 	if err != nil {
 		fmt.Println("error calculating interest score:", err)
@@ -230,66 +173,6 @@ func (h *AIHandler) calculateInterestScore(message *discordgo.MessageCreate, ctx
 	fmt.Println("Calculated interest score:", score)
 
 	return float32(score), combinedContent
-}
-
-func buildIntentPrompt(cfg *config.Config, message *discordgo.MessageCreate, isReplyFlow bool, history string, userSummary string) string {
-	if cfg == nil {
-		return ""
-	}
-
-	enrichedContent := getEnrichedContent(message)
-
-	if isReplyFlow {
-		targetIsOwner, targetMessage := referencedMessageDetails(message, cfg.App.OwnerID)
-		intentPrompt := strings.Replace(cfg.AI.Prompts.IntentReply, "{{.Message}}", enrichedContent, 1)
-		intentPrompt = strings.Replace(intentPrompt, "{{.History}}", history, 1)
-		intentPrompt = strings.Replace(intentPrompt, "{{.TargetRole}}", strconv.FormatBool(targetIsOwner), 1)
-		intentPrompt = strings.Replace(intentPrompt, "{{.TargetMessage}}", targetMessage, 1)
-		intentPrompt = strings.Replace(intentPrompt, "{{.UserSummary}}", userSummary, 1)
-		return intentPrompt
-	}
-	intentPrompt := strings.Replace(cfg.AI.Prompts.Intent, "{{.Message}}", enrichedContent, 1)
-	intentPrompt = strings.Replace(intentPrompt, "{{.History}}", history, 1)
-	intentPrompt = strings.Replace(intentPrompt, "{{.UserSummary}}", userSummary, 1)
-
-	return intentPrompt
-}
-
-func getEnrichedContent(message *discordgo.MessageCreate) string {
-	if message == nil {
-		return ""
-	}
-	content := message.Content
-
-	var tags []string
-
-	if len(message.Attachments) > 0 {
-		tags = append(tags, fmt.Sprintf("[ATTACHMENT_PRESENT: %d file(s)]", len(message.Attachments)))
-	}
-
-	if len(message.Embeds) > 0 {
-		for _, e := range message.Embeds {
-			if e.Image != nil || e.Thumbnail != nil || e.Video != nil {
-				tags = append(tags, "[EMBED_PRESENT]")
-				break
-			}
-		}
-	}
-
-	if len(tags) > 0 {
-		return strings.Join(tags, " ") + " " + content
-	}
-
-	return content
-}
-
-func referencedMessageDetails(message *discordgo.MessageCreate, ownerID string) (bool, string) {
-	if message == nil || message.ReferencedMessage == nil || message.ReferencedMessage.Author == nil {
-		return false, ""
-	}
-
-	ref := message.ReferencedMessage
-	return ref.Author.ID == ownerID, ref.Content
 }
 
 func buildInterestScorePrompt(cfg *config.Config, messageContent, history string, userSummary string) string {

@@ -24,11 +24,12 @@ type MemoryRepository interface {
 	CreateMemory(uid, content, category string, confidence, importance float64, embedding []float64, sourceMessage, guild, channel string) error
 	SearchMemories(uid string, embedding []float64, limit int, minSimilarity, minConfidence float64) ([]Memory, error)
 	SearchMemoryCandidates(uid string, embedding []float64, limit int, minConfidence float64) ([]Memory, error)
-	CreateSelfMemory(content, category string, confidence, importance float64, sourceMessage, guild, channel string) error
-	SearchSelfMemories(embedding []float64, limit int) ([]SelfMemory, error)
+	CreateSelfMemory(content, category string, confidence, importance float64, embedding []float64, sourceMessage, guild, channel string) error
+	SearchSelfMemories(embedding []float64, limit int, minSimilarity float64) ([]SelfMemory, error)
 	ListSelfMemories() ([]SelfMemory, error)
 	ListConflicts() ([]MemoryConflict, error)
-	ResolveConflict(id, action, ownerID string) error
+	GetConflict(id string) (MemoryConflict, error)
+	ResolveConflict(id, action, ownerID string, embedding []float64) error
 	DeleteSelfMemory(id string) error
 }
 type memoryRepository struct {
@@ -117,7 +118,7 @@ func (r *memoryRepository) SearchMemoryCandidates(uid string, embedding []float6
 	return out, nil
 }
 
-func (r *memoryRepository) CreateSelfMemory(content, category string, confidence, importance float64, sourceMessage, guild, channel string) error {
+func (r *memoryRepository) CreateSelfMemory(content, category string, confidence, importance float64, embedding []float64, sourceMessage, guild, channel string) error {
 	if r.db == nil {
 		return nil
 	}
@@ -129,9 +130,9 @@ func (r *memoryRepository) CreateSelfMemory(content, category string, confidence
 	if err != nil {
 		return err
 	}
-	return r.db.Exec(`INSERT INTO self_memories (id,content,category,confidence,importance,source_message_id,source_guild_id,source_channel_id,active,created_at,updated_at) VALUES (gen_random_uuid(),?,?,?,?,?,?,?,true,?,?)`, c, cat, confidence, importance, sourceMessage, guild, channel, time.Now(), time.Now()).Error
+	return r.db.Exec(`INSERT INTO self_memories (id,content,category,confidence,importance,embedding,source_message_id,source_guild_id,source_channel_id,active,created_at,updated_at) VALUES (gen_random_uuid(),?,?,?,?,?::vector,?,?,?,true,?,?)`, c, cat, confidence, importance, vectorLiteral(embedding), sourceMessage, guild, channel, time.Now(), time.Now()).Error
 }
-func (r *memoryRepository) SearchSelfMemories(embedding []float64, limit int) ([]SelfMemory, error) {
+func (r *memoryRepository) SearchSelfMemories(embedding []float64, limit int, minSimilarity float64) ([]SelfMemory, error) {
 	if r.db == nil {
 		return nil, nil
 	}
@@ -142,7 +143,10 @@ func (r *memoryRepository) SearchSelfMemories(embedding []float64, limit int) ([
 		ID, Content, Category  string
 		Confidence, Importance float64
 	}
-	err := r.db.Raw(`SELECT id,content,category,confidence,importance FROM self_memories WHERE active=true ORDER BY importance DESC, confidence DESC LIMIT ?`, limit).Scan(&rows).Error
+	if minSimilarity <= 0 {
+		minSimilarity = 0.78
+	}
+	err := r.db.Raw(`SELECT id,content,category,confidence,importance FROM self_memories WHERE active=true AND embedding IS NOT NULL AND 1-(embedding <=> ?::vector) >= ? ORDER BY embedding <=> ?::vector LIMIT ?`, vectorLiteral(embedding), minSimilarity, vectorLiteral(embedding), limit).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +165,29 @@ func (r *memoryRepository) SearchSelfMemories(embedding []float64, limit int) ([
 	return out, nil
 }
 func (r *memoryRepository) ListSelfMemories() ([]SelfMemory, error) {
-	return r.SearchSelfMemories(nil, 100)
+	if r.db == nil {
+		return nil, nil
+	}
+	var rows []struct {
+		ID, Content, Category  string
+		Confidence, Importance float64
+	}
+	if err := r.db.Raw(`SELECT id,content,category,confidence,importance FROM self_memories WHERE active=true ORDER BY importance DESC, confidence DESC LIMIT 100`).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]SelfMemory, 0, len(rows))
+	for _, x := range rows {
+		c, e := r.reveal(x.Content)
+		if e != nil {
+			continue
+		}
+		cat, e := r.reveal(x.Category)
+		if e != nil {
+			continue
+		}
+		out = append(out, SelfMemory{ID: x.ID, Content: c, Category: cat, Confidence: x.Confidence, Importance: x.Importance})
+	}
+	return out, nil
 }
 func (r *memoryRepository) ListConflicts() ([]MemoryConflict, error) {
 	if r.db == nil {
@@ -171,11 +197,23 @@ func (r *memoryRepository) ListConflicts() ([]MemoryConflict, error) {
 	err := r.db.Raw(`SELECT id,self_memory_id,proposed_content,source_message_id,status FROM self_memory_conflicts WHERE status='unresolved' ORDER BY created_at`).Scan(&out).Error
 	return out, err
 }
-func (r *memoryRepository) ResolveConflict(id, action, ownerID string) error {
+func (r *memoryRepository) GetConflict(id string) (MemoryConflict, error) {
+	if r.db == nil {
+		return MemoryConflict{}, nil
+	}
+	var out MemoryConflict
+	err := r.db.Where("id = ? AND status = 'unresolved'", id).First(&out).Error
+	return out, err
+}
+func (r *memoryRepository) ResolveConflict(id, action, ownerID string, embedding []float64) error {
 	if r.db == nil {
 		return nil
 	}
 	tx := r.db.Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
 	var c struct{ SelfMemoryID, ProposedContent string }
 	if err := tx.Raw(`SELECT self_memory_id,proposed_content FROM self_memory_conflicts WHERE id=? AND status='unresolved'`, id).Scan(&c).Error; err != nil {
 		return err
@@ -185,15 +223,21 @@ func (r *memoryRepository) ResolveConflict(id, action, ownerID string) error {
 		return fmt.Errorf("invalid conflict action")
 	}
 	if action == "accept_new" {
+		if len(embedding) == 0 {
+			return fmt.Errorf("embedding is required to accept new self-memory")
+		}
 		content, e := r.protect(c.ProposedContent)
 		if e != nil {
 			return e
 		}
-		if err := tx.Exec(`UPDATE self_memories SET content=?,updated_at=now() WHERE id=?`, content, c.SelfMemoryID).Error; err != nil {
+		if err := tx.Exec(`UPDATE self_memories SET content=?,embedding=?::vector,updated_at=now() WHERE id=?`, content, vectorLiteral(embedding), c.SelfMemoryID).Error; err != nil {
 			return err
 		}
 	}
-	return tx.Exec(`UPDATE self_memory_conflicts SET status=?,resolved_by=?,resolved_at=now(),updated_at=now() WHERE id=?`, status, ownerID, id).Error
+	if err := tx.Exec(`UPDATE self_memory_conflicts SET status=?,resolved_by=?,resolved_at=now(),updated_at=now() WHERE id=?`, status, ownerID, id).Error; err != nil {
+		return err
+	}
+	return tx.Commit().Error
 }
 func (r *memoryRepository) DeleteSelfMemory(id string) error {
 	if r.db == nil {

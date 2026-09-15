@@ -4,15 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+
 	"github.com/bwmarrin/discordgo"
 	"github.com/iotatfan/sora-go/internal/repository"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
-	"regexp"
-	"sort"
-	"strings"
-	"time"
 )
 
 type memoryGate struct {
@@ -34,7 +35,7 @@ type selfExtraction struct {
 
 func (h *AIHandler) extractSelfMemory(ctx context.Context, text, sourceID, guildID, channelID string) {
 	c := h.config().AI.Memory
-	if !c.Enabled || !c.SelfEnabled || h.memoryRepo == nil || strings.TrimSpace(text) == "" {
+	if !c.Enabled || !c.WriteEnabled || !c.SelfEnabled || h.memoryRepo == nil || strings.TrimSpace(text) == "" {
 		return
 	}
 	p := `Return JSON only as {"memories":[{"content":"...","category":"decision|commitment|preference|identity|goal","confidence":0.0,"importance":0.0}]}. Extract only durable facts explicitly expressed by the assistant. Empty list for ordinary answers. ASSISTANT RESPONSE: ` + text
@@ -42,7 +43,12 @@ func (h *AIHandler) extractSelfMemory(ctx context.Context, text, sourceID, guild
 	if model == "" {
 		model = c.ExtractionModel
 	}
-	r, err := h.client.Responses.New(ctx, responses.ResponseNewParams{Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(p)}, Model: openai.ChatModel(model)})
+	var r *responses.Response
+	err := h.runModelCall(ctx, "self_memory_extraction", func() error {
+		var callErr error
+		r, callErr = h.client.Responses.New(ctx, responses.ResponseNewParams{Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(p)}, Model: openai.ChatModel(model), MaxOutputTokens: openai.Int(300)})
+		return callErr
+	})
 	if err != nil {
 		fmt.Printf("self-memory extraction failed: %v\n", err)
 		return
@@ -51,7 +57,10 @@ func (h *AIHandler) extractSelfMemory(ctx context.Context, text, sourceID, guild
 	if json.Unmarshal([]byte(strings.TrimSpace(r.OutputText())), &out) != nil {
 		return
 	}
-	for _, x := range out.Memories {
+	for i, x := range out.Memories {
+		if i >= 3 {
+			break
+		}
 		if strings.TrimSpace(x.Content) == "" || x.Confidence < c.MinConfidence {
 			continue
 		}
@@ -144,7 +153,12 @@ func (h *AIHandler) embed(ctx context.Context, text string) ([]float64, error) {
 	if model == "" {
 		model = "text-embedding-3-small"
 	}
-	r, e := h.client.Embeddings.New(ctx, openai.EmbeddingNewParams{Input: openai.EmbeddingNewParamsInputUnion{OfString: openai.String(text)}, Model: openai.EmbeddingModel(model)})
+	var r *openai.CreateEmbeddingResponse
+	e := h.runModelCall(ctx, "embedding", func() error {
+		var callErr error
+		r, callErr = h.client.Embeddings.New(ctx, openai.EmbeddingNewParams{Input: openai.EmbeddingNewParamsInputUnion{OfString: openai.String(text)}, Model: openai.EmbeddingModel(model)})
+		return callErr
+	})
 	if e != nil {
 		return nil, e
 	}
@@ -154,9 +168,18 @@ func (h *AIHandler) embed(ctx context.Context, text string) ([]float64, error) {
 	return r.Data[0].Embedding, nil
 }
 
+func (h *AIHandler) EmbedText(ctx context.Context, text string) ([]float64, error) {
+	return h.embed(ctx, text)
+}
+
 func (h *AIHandler) memoryGate(ctx context.Context, m *discordgo.MessageCreate, history, summary string) (memoryGate, error) {
 	p := fmt.Sprintf("Return JSON only: {\"needs_memory\":true|false,\"query\":\"...\",\"reason\":\"...\"}. Decide whether durable personal memory is needed. Use false for greetings, generic questions, or messages answerable from current history. MESSAGE: %s\nSUMMARY: %s\nHISTORY: %s", m.Content, summary, history)
-	r, e := h.client.Responses.New(ctx, responses.ResponseNewParams{Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(p)}, Model: openai.ChatModel(h.config().AI.Memory.RetrievalGateModel), Metadata: shared.Metadata{"discord_user_id": m.Author.ID}})
+	var r *responses.Response
+	e := h.runModelCall(ctx, "memory_gate", func() error {
+		var callErr error
+		r, callErr = h.client.Responses.New(ctx, responses.ResponseNewParams{Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(p)}, Model: openai.ChatModel(h.config().AI.Memory.RetrievalGateModel), MaxOutputTokens: openai.Int(20), Metadata: shared.Metadata{"discord_user_id": m.Author.ID}})
+		return callErr
+	})
 	if e != nil {
 		return memoryGate{}, e
 	}
@@ -292,7 +315,12 @@ func (h *AIHandler) extractMemories(ctx context.Context, m *discordgo.MessageCre
 		return
 	}
 	p := fmt.Sprintf("Return JSON only as {\"memories\":[{\"content\":\"...\",\"category\":\"preference|fact|goal|project|commitment|relationship\",\"confidence\":0.0,\"importance\":0.0}]}. Extract only durable useful personal facts explicitly supported by context. Empty list for casual or temporary content. MESSAGE: %s\nSUMMARY: %s\nRECENT CONTEXT: %s", m.Content, summary, history)
-	r, e := h.client.Responses.New(ctx, responses.ResponseNewParams{Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(p)}, Model: openai.ChatModel(c.ExtractionModel), Metadata: shared.Metadata{"discord_user_id": m.Author.ID}})
+	var r *responses.Response
+	e := h.runModelCall(ctx, "memory_extraction", func() error {
+		var callErr error
+		r, callErr = h.client.Responses.New(ctx, responses.ResponseNewParams{Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(p)}, Model: openai.ChatModel(c.ExtractionModel), MaxOutputTokens: openai.Int(300), Metadata: shared.Metadata{"discord_user_id": m.Author.ID}})
+		return callErr
+	})
 	if e != nil {
 		fmt.Printf("memory extraction failed user_id=%s error=%v\n", m.Author.ID, e)
 		return
@@ -303,7 +331,10 @@ func (h *AIHandler) extractMemories(ctx context.Context, m *discordgo.MessageCre
 		return
 	}
 	accepted := 0
-	for _, x := range out.Memories {
+	for i, x := range out.Memories {
+		if i >= 3 {
+			break
+		}
 		if strings.TrimSpace(x.Content) == "" || x.Confidence < c.MinConfidence {
 			continue
 		}
@@ -325,29 +356,100 @@ func (h *AIHandler) queueMemory(m *discordgo.MessageCreate, summary string) {
 	if h.memoryBuffer == nil || !c.Enabled || !c.WriteEnabled {
 		return
 	}
-	now := time.Now()
+	if m == nil || m.Author == nil {
+		return
+	}
+
 	h.memoryBuffer.mu.Lock()
 	items := h.memoryBuffer.items[m.Author.ID]
-	items = append(items, PendingMemoryMessage{ID: m.ID, Content: m.Content, GuildID: m.GuildID, ChannelID: m.ChannelID, CreatedAt: now})
+	items = append(items, PendingMemoryMessage{ID: m.ID, AuthorID: m.Author.ID, Content: m.Content, GuildID: m.GuildID, ChannelID: m.ChannelID, CreatedAt: time.Now()})
 	h.memoryBuffer.items[m.Author.ID] = items
-	if _, ok := h.memoryBuffer.first[m.Author.ID]; !ok {
-		h.memoryBuffer.first[m.Author.ID] = now
+	h.memoryBuffer.summaries[m.Author.ID] = summary
+	h.memoryBuffer.generations[m.Author.ID]++
+	generation := h.memoryBuffer.generations[m.Author.ID]
+	if timer := h.memoryBuffer.timers[m.Author.ID]; timer != nil {
+		timer.Stop()
 	}
 	size := c.ExtractionBatchSize
 	if size <= 0 {
 		size = 5
 	}
-	flush := len(items) >= size || now.Sub(h.memoryBuffer.first[m.Author.ID]) >= time.Duration(c.ExtractionFlushSeconds)*time.Second
-	if flush {
+	if len(items) >= size {
 		delete(h.memoryBuffer.items, m.Author.ID)
-		delete(h.memoryBuffer.first, m.Author.ID)
+		delete(h.memoryBuffer.generations, m.Author.ID)
+		delete(h.memoryBuffer.timers, m.Author.ID)
+		delete(h.memoryBuffer.summaries, m.Author.ID)
+		h.memoryBuffer.mu.Unlock()
+		go h.extractMemoryItems(items, summary)
+		return
+	}
+
+	flushSeconds := c.ExtractionFlushSeconds
+	if flushSeconds <= 0 {
+		flushSeconds = 300
+	}
+	h.memoryBuffer.timers[m.Author.ID] = time.AfterFunc(time.Duration(flushSeconds)*time.Second, func() {
+		h.flushMemoryQueue(m.Author.ID, generation)
+	})
+	h.memoryBuffer.mu.Unlock()
+}
+
+func (h *AIHandler) flushMemoryQueue(uid string, generation uint64) {
+	h.memoryBuffer.mu.Lock()
+	if h.memoryBuffer.generations[uid] != generation {
+		h.memoryBuffer.mu.Unlock()
+		return
+	}
+	items := h.memoryBuffer.items[uid]
+	summary := h.memoryBuffer.summaries[uid]
+	delete(h.memoryBuffer.items, uid)
+	delete(h.memoryBuffer.generations, uid)
+	delete(h.memoryBuffer.timers, uid)
+	delete(h.memoryBuffer.summaries, uid)
+	h.memoryBuffer.mu.Unlock()
+
+	if len(items) > 0 {
+		go h.extractMemoryItems(items, summary)
+	}
+}
+
+func (h *AIHandler) extractMemoryItems(items []PendingMemoryMessage, summary string) {
+	if len(items) == 0 {
+		return
+	}
+	history := ""
+	for _, x := range items {
+		history += x.Content + "\n"
+	}
+	last := items[len(items)-1]
+	h.extractMemories(context.Background(), &discordgo.MessageCreate{Message: &discordgo.Message{Author: &discordgo.User{ID: last.AuthorID}, ID: last.ID, Content: history, GuildID: last.GuildID, ChannelID: last.ChannelID}}, "", summary)
+}
+
+// FlushMemoryQueues hands all pending memory batches to the extractor. It is
+// intended for graceful shutdown.
+func (h *AIHandler) FlushMemoryQueues() {
+	if h == nil || h.memoryBuffer == nil {
+		return
+	}
+	h.memoryBuffer.mu.Lock()
+	type memoryBatch struct {
+		items   []PendingMemoryMessage
+		summary string
+	}
+	queues := make([]memoryBatch, 0, len(h.memoryBuffer.items))
+	for uid, items := range h.memoryBuffer.items {
+		if timer := h.memoryBuffer.timers[uid]; timer != nil {
+			timer.Stop()
+		}
+		queues = append(queues, memoryBatch{items: items, summary: h.memoryBuffer.summaries[uid]})
+		delete(h.memoryBuffer.items, uid)
+		delete(h.memoryBuffer.timers, uid)
+		delete(h.memoryBuffer.generations, uid)
+		delete(h.memoryBuffer.summaries, uid)
 	}
 	h.memoryBuffer.mu.Unlock()
-	if flush {
-		history := ""
-		for _, x := range items {
-			history += x.Content + "\n"
-		}
-		go h.extractMemories(context.Background(), &discordgo.MessageCreate{Message: &discordgo.Message{Author: m.Author, ID: m.ID, Content: history, GuildID: m.GuildID, ChannelID: m.ChannelID}}, "", summary)
+
+	for _, batch := range queues {
+		h.extractMemoryItems(batch.items, batch.summary)
 	}
 }

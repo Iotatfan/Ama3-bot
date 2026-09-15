@@ -1,19 +1,19 @@
 # Ama3
 
-Ama3 is a high-performance Discord bot written in **Go**, designed for sophisticated, context-aware interactions. Ama3 utilizes a **dual-model fallback strategy**, **intent classification**, and **persistent summaries** to provide an administrative AI experience inspired by the *Arknights* "Kal'tsit" persona.
+Ama3 is a high-performance Discord bot written in **Go**, designed for sophisticated, context-aware interactions. Ama3 uses context-aware responses, local noise detection, and persistent summaries to provide an administrative AI experience inspired by the *Arknights* "Kal'tsit" persona.
 
 ---
 
 ## Core Features
 
 ### Intelligence & Conversation
-* **Intent-Driven Processing:** Classifies user input (Direct, Reply, or Noise) before generating a response to ensure tactical relevance.
+* **Local Noise Detection:** Filters obvious greetings, reactions, and punctuation locally before spending model quota.
 * **Persistent User Summaries:** Utilizes a PostgreSQL backend to maintain long-term summaries of users, tracking interaction history, technical interests, and behavioral traits.
 * **Visual Awareness:** Enriches message context with attachment and embed metadata, allowing the AI to "see" and analyze images (e.g., Gunpla reviews or technical specifications) even with minimal text.
 * **Autonomous Interjections:** Analyzes ongoing chat; if a message passes a specific "interest threshold" related to high-level topics (Biology, Engineering, Strategy), the bot will "overhear" and contribute.
 
 ### Reliability & Performance
-* **Smart Fallback:** Automatically switches to a lighter model if the primary model encounters rate limits or quota exhaustion.
+* **Request Protection:** Shared concurrency, spacing, and quota pause controls prevent request bursts and duplicate retries.
 * **Fluid UX:** Real-time typing indicators and sentence-aware chunking to bypass Discord's 2000-character limit seamlessly.
 * **Direct Flow Throttling:** Configurable limiters to prevent API abuse and maintain conversational focus.
 
@@ -24,7 +24,7 @@ Ama3 is a high-performance Discord bot written in **Go**, designed for sophistic
 | Module | Responsibility |
 | :--- | :--- |
 | `internal/ai/handler.go` | **The Brain:** Orchestrates flow from Discord events to AI responses. |
-| `internal/ai/intent.go` | **The Sifter:** Classifies input and enriches content with visual metadata. |
+| `internal/ai/intent.go` | **Conversation Context:** Builds history and optionally scores autonomous interjections. |
 | `internal/ai/state.go` | **Memory Management:** Handles in-memory conversation maps and cooldowns. |
 | `internal/models/` | **Persistence:** Defines `UserProfile` entities for database storage. |
 
@@ -77,6 +77,9 @@ ai:
     direct_flow_user_cooldown_seconds:    3
     direct_flow_channel_cooldown_seconds: 1
     max_direct_limiter_entries: 4000
+    model_max_concurrent: 2
+    model_min_interval_ms: 250
+    model_quota_cooldown_seconds: 60
 
   # ── AI: Autonomous Interjections ──────────────────────────────────────────
   interest:
@@ -109,37 +112,13 @@ Ama3 is highly tunable via `config/config.yml` or Viper environment variables (u
 | Key | Description |
 | :--- | :--- |
 | `ai.personality` | Loads personality-specific configuration from `config/personalities/<personality>.yml`. |
-| `ai.prompts.*` | Override the built-in system, developer, intent, interest, and summary prompt templates. |
+| `ai.prompts.*` | Override the built-in system, developer, interest, and summary prompt templates. |
 | `ai.interest.interest_score_threshold` | Tune how aggressively the bot interjects into conversations. |
 | `security.encryption_key` | Enable AES-256-GCM at-rest encryption for stored user summaries. |
 
 ---
 
 # Prompt System (`ai.prompts`)
-
-### `intent`
-Classifies a standalone message (no reply thread) into a routing enum.
-
-| Variable | Type | Description |
-| :--- | :--- | :--- |
-| `{{.UserSummary}}` | `string` | Compressed summary of the sender (behavioral traits, known interests). |
-| `{{.History}}` | `string` | Recent conversation context from the channel. |
-| `{{.Message}}` | `string` | The raw latest message text. |
-
-**Returns:** Exactly one enum string — `direct` · `reply_to_target` · `ask_about_target` · `validation_request` · `action_on_self` · `interjection` · `noise` · `provocation`
-
-### `intent_reply`
-Classifies a message that is a Discord reply to another message. Accounts for the replied-to message and its author role.
-
-| Variable | Type | Description |
-| :--- | :--- | :--- |
-| `{{.UserSummary}}` | `string` | Compressed summary of the sender. |
-| `{{.TargetRole}}` | `string` | Role label of the message being replied to (`doctor` / `external`). |
-| `{{.TargetMessage}}` | `string` | Content of the message being replied to. |
-| `{{.History}}` | `string` | Recent conversation context. |
-| `{{.Message}}` | `string` | The raw latest message text. |
-
-**Returns:** Same enum set as `intent`.
 
 ### `system`
 Character identity and behavioral ruleset injected as the OpenAI `system` role. Defines persona, tone protocols, rejection logic, and surveillance access rules.

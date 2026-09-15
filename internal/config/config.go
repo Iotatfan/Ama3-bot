@@ -81,6 +81,9 @@ type RuntimeConfig struct {
 	DirectFlowUserCooldown  int  `mapstructure:"direct_flow_user_cooldown_seconds" yaml:"direct_flow_user_cooldown_seconds"`
 	DirectFlowChanCooldown  int  `mapstructure:"direct_flow_channel_cooldown_seconds" yaml:"direct_flow_channel_cooldown_seconds"`
 	MaxDirectLimiterEntries int  `mapstructure:"max_direct_limiter_entries" yaml:"max_direct_limiter_entries"`
+	ModelMaxConcurrent      int  `mapstructure:"model_max_concurrent" yaml:"model_max_concurrent"`
+	ModelMinIntervalMS      int  `mapstructure:"model_min_interval_ms" yaml:"model_min_interval_ms"`
+	ModelQuotaCooldown      int  `mapstructure:"model_quota_cooldown_seconds" yaml:"model_quota_cooldown_seconds"`
 }
 
 type AIConfig struct {
@@ -129,8 +132,6 @@ type PromptConfig struct {
 	System        string `mapstructure:"system" yaml:"system"`
 	IdentityRule  string `mapstructure:"identity_rule" yaml:"identity_rule"`
 	Developer     string `mapstructure:"developer" yaml:"developer"`
-	Intent        string `mapstructure:"intent" yaml:"intent"`
-	IntentReply   string `mapstructure:"intent_reply" yaml:"intent_reply"`
 	InterestScore string `mapstructure:"interest_score" yaml:"interest_score"`
 	Summary       string `mapstructure:"summary" yaml:"summary"`
 }
@@ -193,6 +194,9 @@ func LoadConfig() error {
 	viper.SetDefault("ai.runtime.direct_flow_user_cooldown_seconds", 3)
 	viper.SetDefault("ai.runtime.direct_flow_channel_cooldown_seconds", 1)
 	viper.SetDefault("ai.runtime.max_direct_limiter_entries", 4000)
+	viper.SetDefault("ai.runtime.model_max_concurrent", 2)
+	viper.SetDefault("ai.runtime.model_min_interval_ms", 250)
+	viper.SetDefault("ai.runtime.model_quota_cooldown_seconds", 60)
 	viper.AutomaticEnv()
 
 	err := viper.ReadInConfig()
@@ -218,8 +222,6 @@ func LoadConfig() error {
 	cfg.AI.Prompts.Developer = helper.MinifyPrompt(cfg.AI.Prompts.Developer)
 	cfg.AI.Prompts.IdentityRule = helper.MinifyPrompt(cfg.AI.Prompts.IdentityRule)
 	cfg.AI.Prompts.Summary = helper.MinifyPrompt(cfg.AI.Prompts.Summary)
-	cfg.AI.Prompts.Intent = helper.MinifyPrompt(cfg.AI.Prompts.Intent)
-	cfg.AI.Prompts.IntentReply = helper.MinifyPrompt(cfg.AI.Prompts.IntentReply)
 	cfg.AI.Prompts.InterestScore = helper.MinifyPrompt(cfg.AI.Prompts.InterestScore)
 
 	Cfg = &cfg

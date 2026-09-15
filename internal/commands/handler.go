@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/bwmarrin/discordgo"
@@ -22,6 +23,7 @@ type CommandsHandler struct {
 	getConfig     func() *config.Config
 	registrations []commandRegistration
 	memoryRepo    repository.MemoryRepository
+	embed         func(context.Context, string) ([]float64, error)
 }
 
 func (h *CommandsHandler) NewWithMemoryRepository(repo repository.MemoryRepository) *CommandsHandler {
@@ -31,6 +33,12 @@ func (h *CommandsHandler) NewWithMemoryRepository(repo repository.MemoryReposito
 func NewCommandsHandlerWithMemoryRepository(repo repository.MemoryRepository) *CommandsHandler {
 	h := NewCommandsHandler()
 	h.memoryRepo = repo
+	return h
+}
+
+func NewCommandsHandlerWithMemoryRepositoryAndEmbedder(repo repository.MemoryRepository, embed func(context.Context, string) ([]float64, error)) *CommandsHandler {
+	h := NewCommandsHandlerWithMemoryRepository(repo)
+	h.embed = embed
 	return h
 }
 
@@ -171,7 +179,24 @@ func (h *CommandsHandler) handleMemory(s *discordgo.Session, i *discordgo.Intera
 	case "resolve":
 		id := sub.Options[0].StringValue()
 		action := sub.Options[1].StringValue()
-		if e := h.memoryRepo.ResolveConflict(id, action, h.ownerID(i)); e != nil {
+		var embedding []float64
+		if action == "accept_new" {
+			if h.embed == nil {
+				h.respondText(s, i, "Embedding service is unavailable.")
+				return
+			}
+			conflict, e := h.memoryRepo.GetConflict(id)
+			if e != nil {
+				h.respondText(s, i, "Unable to read conflict: "+e.Error())
+				return
+			}
+			embedding, e = h.embed(context.Background(), conflict.ProposedContent)
+			if e != nil {
+				h.respondText(s, i, "Unable to create embedding: "+e.Error())
+				return
+			}
+		}
+		if e := h.memoryRepo.ResolveConflict(id, action, h.ownerID(i), embedding); e != nil {
 			h.respondText(s, i, "Resolution failed: "+e.Error())
 			return
 		}

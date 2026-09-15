@@ -37,6 +37,9 @@ ai:
     direct_flow_user_cooldown_seconds: 3
     direct_flow_channel_cooldown_seconds: 1
     max_direct_limiter_entries: 4000
+    model_max_concurrent: 2
+    model_min_interval_ms: 250
+    model_quota_cooldown_seconds: 60
 
   summary:
     enabled: false

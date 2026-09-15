@@ -17,6 +17,7 @@ type AIHandler struct {
 	typingManager      *TypingManager
 	channelCooldown    channelCooldownTracker
 	directLimiter      directFlowLimiter
+	modelLimiter       *modelRateLimiter
 	userMessageCounter *UserTracker
 	userRepo           repository.UserRepository
 	memoryRepo         repository.MemoryRepository
@@ -24,13 +25,15 @@ type AIHandler struct {
 }
 
 type PendingMemoryMessage struct {
-	ID, Content, GuildID, ChannelID string
-	CreatedAt                       time.Time
+	ID, AuthorID, Content, GuildID, ChannelID string
+	CreatedAt                                 time.Time
 }
 type MemoryBuffer struct {
-	mu    sync.Mutex
-	items map[string][]PendingMemoryMessage
-	first map[string]time.Time
+	mu          sync.Mutex
+	items       map[string][]PendingMemoryMessage
+	timers      map[string]*time.Timer
+	generations map[string]uint64
+	summaries   map[string]string
 }
 
 type UserStats struct {
@@ -88,7 +91,7 @@ func NewAIHandler(cfg *config.Config, client *openai.Client, userRepo repository
 		client:          client,
 		userRepo:        userRepo,
 		memoryRepo:      memoryRepo,
-		memoryBuffer:    &MemoryBuffer{items: make(map[string][]PendingMemoryMessage), first: make(map[string]time.Time)},
+		memoryBuffer:    &MemoryBuffer{items: make(map[string][]PendingMemoryMessage), timers: make(map[string]*time.Timer), generations: make(map[string]uint64), summaries: make(map[string]string)},
 		conversationMap: NewConversationMap(cfg),
 		typingManager:   NewTypingManager(),
 		channelCooldown: channelCooldownTracker{
@@ -98,6 +101,7 @@ func NewAIHandler(cfg *config.Config, client *openai.Client, userRepo repository
 			userLastReq: make(map[string]time.Time),
 			chanLastReq: make(map[string]time.Time),
 		},
+		modelLimiter: newModelRateLimiter(cfg),
 		userMessageCounter: &UserTracker{
 			counters: make(map[string]*UserStats),
 		},

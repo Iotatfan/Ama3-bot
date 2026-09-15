@@ -83,6 +83,7 @@ func main() {
 
 	aiClient := openai.NewClient(
 		option.WithAPIKey(cfg.Auth.OpenAIKey),
+		option.WithMaxRetries(0),
 	)
 	handler := aiHandler.NewAIHandler(cfg, &aiClient, userRepo, memoryRepo)
 
@@ -94,7 +95,7 @@ func main() {
 	})
 
 	if cfg.Commands.Enabled {
-		commandsHandler := commands.NewCommandsHandlerWithMemoryRepository(memoryRepo)
+		commandsHandler := commands.NewCommandsHandlerWithMemoryRepositoryAndEmbedder(memoryRepo, handler.EmbedText)
 		commandsHandler.RegisterCommandsWithErrorHandler(discord, errors)
 	}
 
@@ -108,4 +109,5 @@ func main() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	<-c
+	handler.FlushMemoryQueues()
 }
