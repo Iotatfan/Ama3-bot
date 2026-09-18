@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/iotatfan/sora-go/internal/config"
+	"github.com/openai/openai-go/v3/responses"
 )
 
 type modelRateLimiter struct {
@@ -17,6 +18,18 @@ type modelRateLimiter struct {
 	blocked   time.Time
 	interval  time.Duration
 	quotaTTL  time.Duration
+}
+
+func logResponseUsage(kind string, response *responses.Response) {
+	if response == nil {
+		return
+	}
+	usage := response.Usage
+	fmt.Printf("model_usage kind=%s model=%s input_tokens=%d output_tokens=%d cached_input_tokens=%d\n", kind, response.Model, usage.InputTokens, usage.OutputTokens, usage.InputTokensDetails.CachedTokens)
+}
+
+func logEmbeddingUsage(kind, model string, promptTokens, totalTokens int64) {
+	fmt.Printf("model_usage kind=%s model=%s input_tokens=%d total_tokens=%d\n", kind, model, promptTokens, totalTokens)
 }
 
 func newModelRateLimiter(cfg *config.Config) *modelRateLimiter {
@@ -107,6 +120,8 @@ func (h *AIHandler) runModelCall(ctx context.Context, kind string, fn func() err
 	status := "ok"
 	if err != nil {
 		status = "error"
+		fmt.Printf("model_request kind=%s status=%s duration_ms=%d error=%v\n", kind, status, time.Since(started).Milliseconds(), err)
+		return err
 	}
 	fmt.Printf("model_request kind=%s status=%s duration_ms=%d\n", kind, status, time.Since(started).Milliseconds())
 	return err

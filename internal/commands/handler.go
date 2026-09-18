@@ -181,19 +181,22 @@ func (h *CommandsHandler) handleMemory(s *discordgo.Session, i *discordgo.Intera
 		action := sub.Options[1].StringValue()
 		var embedding []float64
 		if action == "accept_new" {
-			if h.embed == nil {
-				h.respondText(s, i, "Embedding service is unavailable.")
-				return
-			}
 			conflict, e := h.memoryRepo.GetConflict(id)
 			if e != nil {
 				h.respondText(s, i, "Unable to read conflict: "+e.Error())
 				return
 			}
-			embedding, e = h.embed(context.Background(), conflict.ProposedContent)
-			if e != nil {
-				h.respondText(s, i, "Unable to create embedding: "+e.Error())
-				return
+			cfg := h.getConfig()
+			if cfg == nil || cfg.AI.Memory.EnableEmbeddings {
+				if h.embed == nil {
+					h.respondText(s, i, "Embedding service is unavailable.")
+					return
+				}
+				embedding, e = h.embed(context.Background(), conflict.ProposedContent)
+				if e != nil {
+					h.respondText(s, i, "Unable to create embedding: "+e.Error())
+					return
+				}
 			}
 		}
 		if e := h.memoryRepo.ResolveConflict(id, action, h.ownerID(i), embedding); e != nil {

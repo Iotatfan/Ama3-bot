@@ -75,27 +75,38 @@ type InterestConfig struct {
 }
 
 type RuntimeConfig struct {
-	EnableDirectThrottle    bool `mapstructure:"enable_direct_throttle" yaml:"enable_direct_throttle"`
-	ConversationTTLSeconds  int  `mapstructure:"conversation_ttl_seconds" yaml:"conversation_ttl_seconds"`
-	MaxConversationMappings int  `mapstructure:"max_conversation_mappings" yaml:"max_conversation_mappings"`
-	DirectFlowUserCooldown  int  `mapstructure:"direct_flow_user_cooldown_seconds" yaml:"direct_flow_user_cooldown_seconds"`
-	DirectFlowChanCooldown  int  `mapstructure:"direct_flow_channel_cooldown_seconds" yaml:"direct_flow_channel_cooldown_seconds"`
-	MaxDirectLimiterEntries int  `mapstructure:"max_direct_limiter_entries" yaml:"max_direct_limiter_entries"`
-	ModelMaxConcurrent      int  `mapstructure:"model_max_concurrent" yaml:"model_max_concurrent"`
-	ModelMinIntervalMS      int  `mapstructure:"model_min_interval_ms" yaml:"model_min_interval_ms"`
-	ModelQuotaCooldown      int  `mapstructure:"model_quota_cooldown_seconds" yaml:"model_quota_cooldown_seconds"`
+	EnableDirectThrottle     bool    `mapstructure:"enable_direct_throttle" yaml:"enable_direct_throttle"`
+	ConversationTTLSeconds   int     `mapstructure:"conversation_ttl_seconds" yaml:"conversation_ttl_seconds"`
+	MaxConversationMappings  int     `mapstructure:"max_conversation_mappings" yaml:"max_conversation_mappings"`
+	DirectFlowUserCooldown   int     `mapstructure:"direct_flow_user_cooldown_seconds" yaml:"direct_flow_user_cooldown_seconds"`
+	DirectFlowChanCooldown   int     `mapstructure:"direct_flow_channel_cooldown_seconds" yaml:"direct_flow_channel_cooldown_seconds"`
+	MaxDirectLimiterEntries  int     `mapstructure:"max_direct_limiter_entries" yaml:"max_direct_limiter_entries"`
+	ModelMaxConcurrent       int     `mapstructure:"model_max_concurrent" yaml:"model_max_concurrent"`
+	ModelMinIntervalMS       int     `mapstructure:"model_min_interval_ms" yaml:"model_min_interval_ms"`
+	ModelQuotaCooldown       int     `mapstructure:"model_quota_cooldown_seconds" yaml:"model_quota_cooldown_seconds"`
+	NoiseReactionProbability float64 `mapstructure:"noise_reaction_probability" yaml:"noise_reaction_probability"`
+	NoiseResponseModel       string  `mapstructure:"noise_response_model" yaml:"noise_response_model"`
 }
 
 type AIConfig struct {
-	Personality string         `mapstructure:"personality" yaml:"personality"`
-	Prompts     PromptConfig   `mapstructure:"prompts" yaml:"prompts"`
-	Interest    InterestConfig `mapstructure:"interest" yaml:"interest"`
-	Runtime     RuntimeConfig  `mapstructure:"runtime" yaml:"runtime"`
-	Summary     SummaryConfig  `mapstructure:"summary" yaml:"summary"`
-	Memory      MemoryConfig   `mapstructure:"memory" yaml:"memory"`
+	Personality    string               `mapstructure:"personality" yaml:"personality"`
+	Prompts        PromptConfig         `mapstructure:"prompts" yaml:"prompts"`
+	Interest       InterestConfig       `mapstructure:"interest" yaml:"interest"`
+	Runtime        RuntimeConfig        `mapstructure:"runtime" yaml:"runtime"`
+	Summary        SummaryConfig        `mapstructure:"summary" yaml:"summary"`
+	HistorySummary HistorySummaryConfig `mapstructure:"history_summary" yaml:"history_summary"`
+	Memory         MemoryConfig         `mapstructure:"memory" yaml:"memory"`
+}
+
+type HistorySummaryConfig struct {
+	Enabled                    bool `mapstructure:"enabled" yaml:"enabled"`
+	MessageThresholdCharacters int  `mapstructure:"message_threshold_characters" yaml:"message_threshold_characters"`
+	MaxSummaryCharacters       int  `mapstructure:"max_summary_characters" yaml:"max_summary_characters"`
 }
 
 type MemoryConfig struct {
+	EnableEmbeddings             bool    `mapstructure:"enable_embeddings" yaml:"enable_embeddings"`
+	DedupSimilarity              float64 `mapstructure:"dedup_similarity" yaml:"dedup_similarity"`
 	LocalGateEnabled             bool    `mapstructure:"local_gate_enabled" yaml:"local_gate_enabled"`
 	LocalGateMinQueryTokens      int     `mapstructure:"local_gate_min_query_tokens" yaml:"local_gate_min_query_tokens"`
 	SelfMinSimilarity            float64 `mapstructure:"self_min_similarity" yaml:"self_min_similarity"`
@@ -112,6 +123,8 @@ type MemoryConfig struct {
 	RetrievalGateModel           string  `mapstructure:"retrieval_gate_model" yaml:"retrieval_gate_model"`
 	EmbeddingModel               string  `mapstructure:"embedding_model" yaml:"embedding_model"`
 	EmbeddingDimensions          int     `mapstructure:"embedding_dimensions" yaml:"embedding_dimensions"`
+	EmbeddingCacheMaxEntries     int     `mapstructure:"embedding_cache_max_entries" yaml:"embedding_cache_max_entries"`
+	EmbeddingCacheTTLSeconds     int     `mapstructure:"embedding_cache_ttl_seconds" yaml:"embedding_cache_ttl_seconds"`
 	MaxCandidates                int     `mapstructure:"max_candidates" yaml:"max_candidates"`
 	MaxInjected                  int     `mapstructure:"max_injected" yaml:"max_injected"`
 	MaxInjectedCharacters        int     `mapstructure:"max_injected_characters" yaml:"max_injected_characters"`
@@ -140,6 +153,7 @@ type SummaryConfig struct {
 	Enabled             bool `mapstructure:"enabled" yaml:"enabled"`
 	SummaryMessageLimit int  `mapstructure:"summary_message_limit" yaml:"summary_message_limit"`
 	MessageThreshold    int  `mapstructure:"message_threshold" yaml:"message_threshold"`
+	MaxCharacters       int  `mapstructure:"max_characters" yaml:"max_characters"`
 }
 
 var Cfg *Config
@@ -159,7 +173,13 @@ func LoadConfig() error {
 	viper.SetDefault("platform.replacements.enabled", false)
 	viper.SetDefault("ai.interest.enable_interest_detection", false)
 	viper.SetDefault("ai.summary.enabled", false)
+	viper.SetDefault("ai.summary.max_characters", 600)
+	viper.SetDefault("ai.history_summary.enabled", false)
+	viper.SetDefault("ai.history_summary.message_threshold_characters", 500)
+	viper.SetDefault("ai.history_summary.max_summary_characters", 300)
 	viper.SetDefault("ai.memory.enabled", false)
+	viper.SetDefault("ai.memory.enable_embeddings", true)
+	viper.SetDefault("ai.memory.dedup_similarity", 0.92)
 	viper.SetDefault("ai.memory.local_gate_enabled", true)
 	viper.SetDefault("ai.memory.local_gate_min_query_tokens", 3)
 	viper.SetDefault("ai.memory.self_min_similarity", 0.78)
@@ -174,6 +194,8 @@ func LoadConfig() error {
 	viper.SetDefault("ai.memory.retrieval_gate_model", "gpt-5-mini")
 	viper.SetDefault("ai.memory.embedding_model", "text-embedding-3-small")
 	viper.SetDefault("ai.memory.embedding_dimensions", 1536)
+	viper.SetDefault("ai.memory.embedding_cache_max_entries", 2048)
+	viper.SetDefault("ai.memory.embedding_cache_ttl_seconds", 3600)
 	viper.SetDefault("ai.memory.max_candidates", 20)
 	viper.SetDefault("ai.memory.max_injected", 5)
 	viper.SetDefault("ai.memory.max_injected_characters", 3000)
@@ -197,6 +219,8 @@ func LoadConfig() error {
 	viper.SetDefault("ai.runtime.model_max_concurrent", 2)
 	viper.SetDefault("ai.runtime.model_min_interval_ms", 250)
 	viper.SetDefault("ai.runtime.model_quota_cooldown_seconds", 60)
+	viper.SetDefault("ai.runtime.noise_reaction_probability", 0.70)
+	viper.SetDefault("ai.runtime.noise_response_model", "gpt-5.4-mini")
 	viper.AutomaticEnv()
 
 	err := viper.ReadInConfig()

@@ -22,6 +22,20 @@ type AIHandler struct {
 	userRepo           repository.UserRepository
 	memoryRepo         repository.MemoryRepository
 	memoryBuffer       *MemoryBuffer
+	embeddingCache     *embeddingCache
+}
+
+type embeddingCacheEntry struct {
+	vector    []float64
+	expiresAt time.Time
+	lastUsed  time.Time
+}
+
+type embeddingCache struct {
+	mu      sync.Mutex
+	items   map[string]embeddingCacheEntry
+	maxSize int
+	ttl     time.Duration
 }
 
 type PendingMemoryMessage struct {
@@ -92,6 +106,7 @@ func NewAIHandler(cfg *config.Config, client *openai.Client, userRepo repository
 		userRepo:        userRepo,
 		memoryRepo:      memoryRepo,
 		memoryBuffer:    &MemoryBuffer{items: make(map[string][]PendingMemoryMessage), timers: make(map[string]*time.Timer), generations: make(map[string]uint64), summaries: make(map[string]string)},
+		embeddingCache:  newEmbeddingCache(cfg),
 		conversationMap: NewConversationMap(cfg),
 		typingManager:   NewTypingManager(),
 		channelCooldown: channelCooldownTracker{
@@ -106,6 +121,19 @@ func NewAIHandler(cfg *config.Config, client *openai.Client, userRepo repository
 			counters: make(map[string]*UserStats),
 		},
 	}
+}
+
+func newEmbeddingCache(cfg *config.Config) *embeddingCache {
+	maxSize, ttl := 2048, time.Hour
+	if cfg != nil {
+		if cfg.AI.Memory.EmbeddingCacheMaxEntries > 0 {
+			maxSize = cfg.AI.Memory.EmbeddingCacheMaxEntries
+		}
+		if cfg.AI.Memory.EmbeddingCacheTTLSeconds > 0 {
+			ttl = time.Duration(cfg.AI.Memory.EmbeddingCacheTTLSeconds) * time.Second
+		}
+	}
+	return &embeddingCache{items: make(map[string]embeddingCacheEntry), maxSize: maxSize, ttl: ttl}
 }
 
 func NewConversationMap(cfg ...*config.Config) *ConversationMap {

@@ -34,39 +34,18 @@ ai:
       Respond with ONLY a float (0.0 - 1.0).
 
     summary: |
-      Task: Update the summary profile for {{.Username}}.
+      Task: Update a compact interaction profile for {{.Username}}.
 
       [CURRENT SUMMARY]: {{.OldSummary}}
       [NEW LOGS]: {{.NewMessages}}
 
       CORE BEHAVIOR:
-      - Summarize the user's technical interests and typical behavior.
-      - Keep the output concise and strictly under 3000 characters.
+      - Write only 2–4 concise plain-text sentences, with no heading or label.
+      - Keep the output strictly under 600 characters.
       - Merge new information with the existing summary seamlessly.
+      - Keep only stable response preferences, broad recurring interests, and current projects or useful interaction context.
+      - Exclude exact personal records, dates, names, goals, commitments, third-party facts, temporary events, jokes, repetition, and unsupported psychological interpretations; those belong in long-term memory or conversation history.
+      - Return plain-text sentences only, with no heading, label, bullet list, dossier language, or metadata.
       
       OUTPUT:
       - Return only the updated summary text.
-
-    intent: |
-      Classify the intent of the following message into exactly one of these categories:
-      direct, reply_to_target, ask_about_target, validation_request, action_on_self, interjection, noise, provocation.
-
-      [SUBJECT_SUMMARY]: {{.UserSummary}}
-      [TRANSCRIPT]: {{.History}}
-      [MESSAGE]: {{.Message}}
-
-      OUTPUT:
-      - Return ONLY the exact category name. Do not include quotes or any other text.
-
-    intent_reply: |
-      Classify the intent of the following message, which is a reply to another message, into exactly one of these categories:
-      direct, reply_to_target, ask_about_target, validation_request, action_on_self, interjection, noise, provocation.
-
-      [SUBJECT_SUMMARY]: {{.UserSummary}}
-      [TARGET_ROLE]: {{.TargetRole}}
-      [TARGET_MESSAGE]: {{.TargetMessage}}
-      [TRANSCRIPT]: {{.History}}
-      [MESSAGE]: {{.Message}}
-
-      OUTPUT:
-      - Return ONLY the exact category name. Do not include quotes or any other text.

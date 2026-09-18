@@ -80,6 +80,8 @@ ai:
     model_max_concurrent: 2
     model_min_interval_ms: 250
     model_quota_cooldown_seconds: 60
+    noise_reaction_probability: 0.70
+    noise_response_model: "gpt-5.4-mini"
 
   # ── AI: Autonomous Interjections ──────────────────────────────────────────
   interest:
@@ -93,6 +95,15 @@ ai:
     enabled:               false  # Set true to periodically compress user history
     message_threshold:     30     # New messages before a summary is triggered
     summary_message_limit: 30     # Messages fed into each summary pass
+
+  memory:
+    enable_embeddings: true       # Use vector embeddings; false uses keyword retrieval and no embedding API calls
+    embedding_model: "text-embedding-3-small"
+    embedding_dimensions: 1536
+    embedding_cache_max_entries: 2048
+    embedding_cache_ttl_seconds: 3600
+    local_gate_enabled: true      # Avoid embedding queries for ordinary messages
+    retrieval_mode: always        # Avoid the extra model call used by retrieval_mode: model
 
 # ── Security ────────────────────────────────────────────────────────────────
 security:

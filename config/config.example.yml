@@ -26,12 +26,12 @@ ai:
   
   interest:
     interest_score_threshold: 0.7
-    past_message_limit: 15
+    past_message_limit: 12
     cooldown_seconds: 600
     enable_interest_detection: false
 
   runtime:
-    enable_direct_throttle: false
+    enable_direct_throttle: true
     conversation_ttl_seconds: 21600
     max_conversation_mappings: 1000
     direct_flow_user_cooldown_seconds: 3
@@ -40,11 +40,35 @@ ai:
     model_max_concurrent: 2
     model_min_interval_ms: 250
     model_quota_cooldown_seconds: 60
+    noise_reaction_probability: 0.70
+    noise_response_model: "gpt-5.4-mini"
 
   summary:
     enabled: false
+    max_characters: 600
     message_threshold: 30
     summary_message_limit: 30
+
+  history_summary:
+    enabled: false
+    message_threshold_characters: 500
+    max_summary_characters: 300
+
+  memory:
+    enabled: true
+    write_enabled: true
+    enable_embeddings: true
+    dedup_similarity: 0.92
+    local_gate_enabled: true
+    retrieval_mode: always
+    extraction_model: "gpt-5-mini"
+    self_extraction_model: "gpt-5-mini"
+    embedding_model: "text-embedding-3-small"
+    embedding_dimensions: 1536
+    embedding_cache_max_entries: 2048
+    embedding_cache_ttl_seconds: 3600
+    self_max_injected_characters: 3500
+    max_injected_characters: 2000
 
 security:
   # AES-256 encryption key for at-rest encryption of user summary data.

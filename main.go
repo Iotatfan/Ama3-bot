@@ -57,9 +57,10 @@ func main() {
 			if err := db.Exec("CREATE EXTENSION IF NOT EXISTS pgcrypto").Error; err != nil {
 				errors.Error("database.pgcrypto_extension", err)
 			}
-			if err := db.Exec(`CREATE TABLE IF NOT EXISTS user_memories (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), discord_uid varchar(64) NOT NULL, content text NOT NULL, category varchar(128) NOT NULL, confidence double precision NOT NULL, importance double precision NOT NULL, embedding vector(1536) NOT NULL, source_message_id varchar(64), source_guild_id varchar(64), source_channel_id varchar(64), active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL)`).Error; err != nil {
+			if err := db.Exec(`CREATE TABLE IF NOT EXISTS user_memories (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), discord_uid varchar(64) NOT NULL, content text NOT NULL, category varchar(128) NOT NULL, confidence double precision NOT NULL, importance double precision NOT NULL, embedding vector(1536), source_message_id varchar(64), source_guild_id varchar(64), source_channel_id varchar(64), active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL)`).Error; err != nil {
 				errors.Error("database.memory_migrate", err)
 			}
+			db.Exec("ALTER TABLE user_memories ALTER COLUMN embedding DROP NOT NULL")
 			if err := db.Exec("CREATE INDEX IF NOT EXISTS idx_user_memories_uid_active ON user_memories(discord_uid, active)").Error; err != nil {
 				errors.Error("database.memory_index", err)
 			}

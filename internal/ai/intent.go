@@ -62,14 +62,15 @@ func isMessageAuthor(message *discordgo.Message, authorID string) bool {
 	return message != nil && message.Author != nil && message.Author.ID == authorID
 }
 
-func getMessageHistory(discord *discordgo.Session, message *discordgo.MessageCreate, limit int, botID string) (string, error) {
+func (h *AIHandler) getMessageHistory(ctx context.Context, discord *discordgo.Session, message *discordgo.MessageCreate, limit int, botID string) (string, error) {
 	pastMessages, err := fetchMessageHistory(discord, message.ChannelID, limit)
 	if err != nil {
-		fmt.Println("error fetching past messages for interest scoring:", err)
+		fmt.Println("error fetching message history:", err)
 		return message.Content, nil
 	}
 
-	return formatMessageHistory(pastMessages, message.ID, botID), nil
+	historyMessages := buildHistoryMessages(pastMessages, message.ID, botID)
+	return h.summarizeHistoryMessages(ctx, historyMessages), nil
 }
 
 func fetchMessageHistory(discord *discordgo.Session, channelID string, limit int) ([]*discordgo.Message, error) {
@@ -77,32 +78,7 @@ func fetchMessageHistory(discord *discordgo.Session, channelID string, limit int
 }
 
 func formatMessageHistory(pastMessages []*discordgo.Message, currentMessageID, botID string) string {
-	var builder strings.Builder
-
-	// Build history in chronological order, excluding the current message.
-	for i := len(pastMessages) - 1; i >= 0; i-- {
-		m := pastMessages[i]
-		if m == nil {
-			continue
-		}
-		if m.ID == currentMessageID {
-			continue
-		}
-
-		msgContent := historyMessageContent(m)
-		if msgContent == "" {
-			continue
-		}
-
-		uid, label := historyAuthorLabel(m.Author, botID)
-		if label != "" {
-			builder.WriteString(fmt.Sprintf("[UID:%s] %s : %s\n", uid, label, msgContent))
-		} else {
-			builder.WriteString(fmt.Sprintf("[UID:%s] : %s\n", uid, msgContent))
-		}
-	}
-
-	return builder.String()
+	return renderHistoryMessages(buildHistoryMessages(pastMessages, currentMessageID, botID))
 }
 
 func historyAuthorLabel(author *discordgo.User, botID string) (uid string, label string) {
@@ -139,7 +115,7 @@ func historyMessageContent(message *discordgo.Message) string {
 
 func (h *AIHandler) calculateInterestScore(message *discordgo.MessageCreate, ctx context.Context, discord *discordgo.Session, userSummary string) (float32, string) {
 	cfg := h.config()
-	combinedContent, _ := getMessageHistory(discord, message, cfg.AI.Interest.PastMessageLimit, cfg.App.BotID)
+	combinedContent, _ := h.getMessageHistory(ctx, discord, message, cfg.AI.Interest.PastMessageLimit, cfg.App.BotID)
 	interjectionPrompt := buildInterestScorePrompt(cfg, message.Content, combinedContent, userSummary)
 
 	var resp *responses.Response
@@ -163,14 +139,13 @@ func (h *AIHandler) calculateInterestScore(message *discordgo.MessageCreate, ctx
 		fmt.Println("error calculating interest score:", err)
 		return 0, ""
 	}
+	logResponseUsage("interest", resp)
 
 	score, err := strconv.ParseFloat(resp.OutputText(), 32)
 	if err != nil {
 		fmt.Println("error parsing interest score:", err)
 		return 0, ""
 	}
-
-	fmt.Println("Calculated interest score:", score)
 
 	return float32(score), combinedContent
 }

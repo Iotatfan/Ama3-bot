@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,6 +16,84 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 )
+
+const emptyResponseFallback = "...."
+
+func normalizeResponseContent(content, kind, convID string) string {
+	content = strings.TrimSpace(content)
+	if content != "" {
+		return content
+	}
+
+	fmt.Printf("empty_response kind=%s conversation_id=%s fallback=%q\n", kind, convID, emptyResponseFallback)
+	return emptyResponseFallback
+}
+
+func (h *AIHandler) handleNoise(discord *discordgo.Session, message *discordgo.MessageCreate, ctx context.Context) {
+	if !h.havePermissionToSendMessages(discord, message) {
+		return
+	}
+	p := h.config().AI.Runtime.NoiseReactionProbability
+	if p < 0 {
+		p = 0
+	}
+	if p > 1 {
+		p = 1
+	}
+	if rand.Float64() < p {
+		h.reactToNoise(discord, message)
+		return
+	}
+
+	convID := ""
+	if message.MessageReference != nil {
+		convID, _ = h.conversationMap.GetConversationByRef(message.MessageReference.MessageID)
+	}
+	if convID == "" {
+		conv, err := h.client.Conversations.New(ctx, conversations.ConversationNewParams{})
+		if err != nil {
+			h.sendOpenAIError(discord, message, err)
+			return
+		}
+		convID = conv.ID
+	}
+	stopTyping := h.typingManager.Start(discord, message.ChannelID)
+	defer stopTyping()
+	resp, replyTarget, err := h.generateNoiseResponse(message, ctx, convID)
+	if err != nil {
+		h.sendOpenAIError(discord, message, err)
+		return
+	}
+	h.sendReplyMessage(discord, message, normalizeResponseContent(resp.OutputText(), "noise_response", convID), replyTarget, convID)
+}
+
+func (h *AIHandler) generateNoiseResponse(message *discordgo.MessageCreate, ctx context.Context, convID string) (*responses.Response, *discordgo.MessageReference, error) {
+	cfg := h.config()
+	combined, replyTarget := buildCombinedUserContent(cfg, message, "", "")
+	input := buildResponseInput(cfg, buildUserContent(combined, message))
+	model := cfg.AI.Runtime.NoiseResponseModel
+	if model == "" {
+		model = "gpt-5.4-mini"
+	}
+	var resp *responses.Response
+	err := h.runModelCall(ctx, "noise_response", func() error {
+		var callErr error
+		resp, callErr = h.client.Responses.New(ctx, responses.ResponseNewParams{
+			Input:                input,
+			Model:                openai.ChatModel(model),
+			MaxOutputTokens:      openai.Int(120),
+			Conversation:         responses.ResponseNewParamsConversationUnion{OfConversationObject: &responses.ResponseConversationParam{ID: convID}},
+			PromptCacheRetention: responses.ResponseNewParamsPromptCacheRetention24h,
+			Metadata:             shared.Metadata{"discord_user_id": message.Author.ID, "discord_guild_id": message.GuildID, "discord_channel_id": message.ChannelID},
+		})
+		return callErr
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	logResponseUsage("noise_response", resp)
+	return resp, replyTarget, nil
+}
 
 func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discordgo.MessageCreate, ctx context.Context, noise bool, history string, userSummary string, longMemory ...string) {
 	if !h.havePermissionToSendMessages(discord, message) {
@@ -41,7 +120,7 @@ func (h *AIHandler) generateNewChat(discord *discordgo.Session, message *discord
 		return
 	}
 
-	h.sendReplyMessage(discord, message, resp.OutputText(), replyTarget, conv.ID)
+	h.sendReplyMessage(discord, message, normalizeResponseContent(resp.OutputText(), "response", conv.ID), replyTarget, conv.ID)
 	go h.extractSelfMemory(context.Background(), resp.OutputText(), message.ID, message.GuildID, message.ChannelID)
 }
 
@@ -63,15 +142,13 @@ func (h *AIHandler) generateFollowUpChat(discord *discordgo.Session, message *di
 	if !ok {
 		return
 	}
-	fmt.Println("Generating follow-up chat for conversation ID:", convID)
-
 	resp, replyTarget, err := h.generateAIResponse(message, ctx, convID, history, userSummary, longMemory...)
 	if err != nil {
 		h.sendOpenAIError(discord, message, err)
 		return
 	}
 
-	h.sendReplyMessage(discord, message, resp.OutputText(), replyTarget, convID)
+	h.sendReplyMessage(discord, message, normalizeResponseContent(resp.OutputText(), "response", convID), replyTarget, convID)
 	go h.extractSelfMemory(context.Background(), resp.OutputText(), message.ID, message.GuildID, message.ChannelID)
 }
 
@@ -121,6 +198,7 @@ func (h *AIHandler) generateAIResponse(message *discordgo.MessageCreate, ctx con
 	})
 
 	if err == nil {
+		logResponseUsage("response", resp)
 		return resp, replyTarget, nil
 	}
 
@@ -298,6 +376,8 @@ func buildResponseInput(cfg *config.Config, userContent []responses.ResponseInpu
 }
 
 func (h *AIHandler) sendReplyMessage(discord *discordgo.Session, message *discordgo.MessageCreate, content string, replyTarget *discordgo.MessageReference, convID string) {
+	content = normalizeResponseContent(content, "discord_reply", convID)
+
 	// Discord has a message character limit of 2000, so split long responses.
 	if len(content) > 2000 {
 		chunks := helper.SmartSentenceChunk(content, 2000)
@@ -326,12 +406,13 @@ func (h *AIHandler) sendReplyMessage(discord *discordgo.Session, message *discor
 }
 
 func (h *AIHandler) GenerateUserSummary(uid string, username string, userSummary string, messages []string, guildID string, channelID string, ctx context.Context) (string, error) {
+	cleanedOldSummary := cleanUserSummary(userSummary, h.config().AI.Summary.MaxCharacters)
 	if len(messages) == 0 {
-		return "", nil
+		return cleanedOldSummary, nil
 	}
 
 	summaryPrompt := h.config().AI.Prompts.Summary
-	summaryPrompt = strings.Replace(summaryPrompt, "{{.OldSummary}}", userSummary, 1)
+	summaryPrompt = strings.Replace(summaryPrompt, "{{.OldSummary}}", cleanedOldSummary, 1)
 	summaryPrompt = strings.Replace(summaryPrompt, "{{.NewMessages}}", strings.Join(messages, "\n"), 1)
 	summaryPrompt = strings.Replace(summaryPrompt, "{{.Username}}", username, 1)
 
@@ -343,7 +424,7 @@ func (h *AIHandler) GenerateUserSummary(uid string, username string, userSummary
 				OfString: openai.String(summaryPrompt),
 			},
 			Model:                openai.ChatModelGPT5_4Mini,
-			MaxOutputTokens:      openai.Int(300),
+			MaxOutputTokens:      openai.Int(160),
 			PromptCacheRetention: responses.ResponseNewParamsPromptCacheRetention24h,
 			Metadata: shared.Metadata{
 				"discord_user_id":    uid,
@@ -357,8 +438,42 @@ func (h *AIHandler) GenerateUserSummary(uid string, username string, userSummary
 		fmt.Println("error generating user summary:", err)
 		return "", err
 	}
+	logResponseUsage("summary", resp)
 
-	return resp.OutputText(), nil
+	cleaned := cleanUserSummary(resp.OutputText(), h.config().AI.Summary.MaxCharacters)
+	if cleaned == "" {
+		return cleanedOldSummary, nil
+	}
+	return cleaned, nil
+}
+
+var summaryLabelRE = regexp.MustCompile(`(?i)^\s*(?:\[\s*subject[_ ]summary\s*\]\s*)?(?:#+\s*)?(?:(?:subject[_ ]summary|summary|user summary|personnel file|user profile)\s*:?\s*)?`)
+
+func cleanUserSummary(summary string, maxCharacters int) string {
+	if maxCharacters <= 0 {
+		maxCharacters = 600
+	}
+	cleaned := strings.TrimSpace(summary)
+	for {
+		next := summaryLabelRE.ReplaceAllString(cleaned, "")
+		if next == cleaned {
+			break
+		}
+		cleaned = strings.TrimSpace(next)
+	}
+	cleaned = strings.Join(strings.Fields(cleaned), " ")
+	if cleaned == "" {
+		return ""
+	}
+	runes := []rune(cleaned)
+	if len(runes) <= maxCharacters {
+		return cleaned
+	}
+	cut := string(runes[:maxCharacters])
+	if end := strings.LastIndexAny(cut, ".!?。！？"); end >= 0 {
+		return strings.TrimSpace(cut[:end+1])
+	}
+	return strings.TrimSpace(cut)
 }
 
 func (h *AIHandler) reactToNoise(discord *discordgo.Session, message *discordgo.MessageCreate) {

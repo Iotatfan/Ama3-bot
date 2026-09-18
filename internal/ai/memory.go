@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/iotatfan/sora-go/internal/repository"
@@ -53,6 +55,7 @@ func (h *AIHandler) extractSelfMemory(ctx context.Context, text, sourceID, guild
 		fmt.Printf("self-memory extraction failed: %v\n", err)
 		return
 	}
+	logResponseUsage("self_memory_extraction", r)
 	var out selfExtraction
 	if json.Unmarshal([]byte(strings.TrimSpace(r.OutputText())), &out) != nil {
 		return
@@ -64,12 +67,19 @@ func (h *AIHandler) extractSelfMemory(ctx context.Context, text, sourceID, guild
 		if strings.TrimSpace(x.Content) == "" || x.Confidence < c.MinConfidence {
 			continue
 		}
-		v, e := h.embed(ctx, x.Content)
-		if e != nil {
+		if exists, err := h.memoryRepo.HasSelfMemoryContent(x.Content); err == nil && exists {
 			continue
 		}
-		if e = h.memoryRepo.CreateSelfMemory(x.Content, x.Category, x.Confidence, x.Importance, v, sourceID, guildID, channelID); e != nil {
-			fmt.Printf("self-memory write failed: %v\n", e)
+		var v []float64
+		if c.EnableEmbeddings {
+			var embedErr error
+			v, embedErr = h.embed(ctx, x.Content)
+			if embedErr != nil {
+				continue
+			}
+		}
+		if err := h.memoryRepo.CreateSelfMemory(x.Content, x.Category, x.Confidence, x.Importance, v, sourceID, guildID, channelID); err != nil {
+			fmt.Printf("self-memory write failed: %v\n", err)
 			continue
 		}
 		_ = v
@@ -147,25 +157,178 @@ func memoryKeywordScore(query, content string) float64 {
 	return float64(hits) / float64(len(q))
 }
 
+func normalizeMemoryContent(s string) string {
+	return strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsSpace(r) {
+			return unicode.ToLower(r)
+		}
+		return -1
+	}, s)), " ")
+}
+
+func memoryCosineSimilarity(a, b []float64) float64 {
+	if len(a) == 0 || len(a) != len(b) {
+		return 0
+	}
+	var dot, an, bn float64
+	for i := range a {
+		dot += a[i] * b[i]
+		an += a[i] * a[i]
+		bn += b[i] * b[i]
+	}
+	if an == 0 || bn == 0 {
+		return 0
+	}
+	return dot / (math.Sqrt(an) * math.Sqrt(bn))
+}
+
+func betterMemory(confidence, importance float64, current repository.Memory) bool {
+	return confidence > current.Confidence || (confidence == current.Confidence && importance > current.Importance)
+}
+
+func betterSelfMemory(confidence, importance float64, current repository.SelfMemory) bool {
+	return confidence > current.Confidence || (confidence == current.Confidence && importance > current.Importance)
+}
+
+func duplicateMemoryContent(content string, embedding []float64, selected []repository.Memory, threshold float64) int {
+	normalized := normalizeMemoryContent(content)
+	for i, m := range selected {
+		if normalized != "" && normalized == normalizeMemoryContent(m.Content) {
+			return i
+		}
+		if threshold > 0 && memoryCosineSimilarity(embedding, m.Embedding) >= threshold {
+			return i
+		}
+	}
+	return -1
+}
+
+func duplicateSelfMemoryContent(content string, embedding []float64, selected []repository.SelfMemory, threshold float64) int {
+	normalized := normalizeMemoryContent(content)
+	for i, m := range selected {
+		if normalized != "" && normalized == normalizeMemoryContent(m.Content) {
+			return i
+		}
+		if threshold > 0 && memoryCosineSimilarity(embedding, m.Embedding) >= threshold {
+			return i
+		}
+	}
+	return -1
+}
+
+func deduplicateMemories(mem []repository.Memory, threshold float64) []repository.Memory {
+	selected := make([]repository.Memory, 0, len(mem))
+	for _, candidate := range mem {
+		if strings.TrimSpace(candidate.Content) == "" {
+			continue
+		}
+		if i := duplicateMemoryContent(candidate.Content, candidate.Embedding, selected, threshold); i >= 0 {
+			if betterMemory(candidate.Confidence, candidate.Importance, selected[i]) {
+				selected[i] = candidate
+			}
+			continue
+		}
+		selected = append(selected, candidate)
+	}
+	return selected
+}
+
+func deduplicateSelfMemories(mem []repository.SelfMemory, threshold float64) []repository.SelfMemory {
+	selected := make([]repository.SelfMemory, 0, len(mem))
+	for _, candidate := range mem {
+		if strings.TrimSpace(candidate.Content) == "" {
+			continue
+		}
+		if i := duplicateSelfMemoryContent(candidate.Content, candidate.Embedding, selected, threshold); i >= 0 {
+			if betterSelfMemory(candidate.Confidence, candidate.Importance, selected[i]) {
+				selected[i] = candidate
+			}
+			continue
+		}
+		selected = append(selected, candidate)
+	}
+	return selected
+}
+
 func (h *AIHandler) embed(ctx context.Context, text string) ([]float64, error) {
+	if !h.config().AI.Memory.EnableEmbeddings {
+		return nil, fmt.Errorf("embeddings disabled")
+	}
 	c := h.config()
 	model := c.AI.Memory.EmbeddingModel
 	if model == "" {
 		model = "text-embedding-3-small"
 	}
+	dimensions := c.AI.Memory.EmbeddingDimensions
+	if dimensions <= 0 {
+		dimensions = 1536
+	}
+	key := fmt.Sprintf("%s\x00%d\x00%s", model, dimensions, normalizeMemoryContent(text))
+	if vector, ok := h.embeddingCacheGet(key); ok {
+		fmt.Printf("embedding_cache status=hit model=%s dimensions=%d\n", model, dimensions)
+		return vector, nil
+	}
+	fmt.Printf("embedding_cache status=miss model=%s dimensions=%d\n", model, dimensions)
 	var r *openai.CreateEmbeddingResponse
 	e := h.runModelCall(ctx, "embedding", func() error {
 		var callErr error
-		r, callErr = h.client.Embeddings.New(ctx, openai.EmbeddingNewParams{Input: openai.EmbeddingNewParamsInputUnion{OfString: openai.String(text)}, Model: openai.EmbeddingModel(model)})
+		params := openai.EmbeddingNewParams{Input: openai.EmbeddingNewParamsInputUnion{OfString: openai.String(text)}, Model: openai.EmbeddingModel(model), Dimensions: openai.Int(int64(dimensions))}
+		r, callErr = h.client.Embeddings.New(ctx, params)
 		return callErr
 	})
 	if e != nil {
 		return nil, e
 	}
+	logEmbeddingUsage("embedding", r.Model, r.Usage.PromptTokens, r.Usage.TotalTokens)
 	if len(r.Data) == 0 {
 		return nil, fmt.Errorf("empty embedding")
 	}
-	return r.Data[0].Embedding, nil
+	vector := r.Data[0].Embedding
+	h.embeddingCacheSet(key, vector)
+	return vector, nil
+}
+
+func (h *AIHandler) embeddingCacheGet(key string) ([]float64, bool) {
+	if h == nil || h.embeddingCache == nil {
+		return nil, false
+	}
+	cache := h.embeddingCache
+	now := time.Now()
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	entry, ok := cache.items[key]
+	if !ok || now.After(entry.expiresAt) {
+		if ok {
+			delete(cache.items, key)
+		}
+		return nil, false
+	}
+	entry.lastUsed = now
+	cache.items[key] = entry
+	return append([]float64(nil), entry.vector...), true
+}
+
+func (h *AIHandler) embeddingCacheSet(key string, vector []float64) {
+	if h == nil || h.embeddingCache == nil {
+		return
+	}
+	cache := h.embeddingCache
+	now := time.Now()
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if len(cache.items) >= cache.maxSize {
+		oldestKey := ""
+		var oldest time.Time
+		for candidateKey, entry := range cache.items {
+			if oldestKey == "" || entry.lastUsed.Before(oldest) {
+				oldestKey, oldest = candidateKey, entry.lastUsed
+			}
+		}
+		if oldestKey != "" {
+			delete(cache.items, oldestKey)
+		}
+	}
+	cache.items[key] = embeddingCacheEntry{vector: append([]float64(nil), vector...), expiresAt: now.Add(cache.ttl), lastUsed: now}
 }
 
 func (h *AIHandler) EmbedText(ctx context.Context, text string) ([]float64, error) {
@@ -183,6 +346,7 @@ func (h *AIHandler) memoryGate(ctx context.Context, m *discordgo.MessageCreate, 
 	if e != nil {
 		return memoryGate{}, e
 	}
+	logResponseUsage("memory_gate", r)
 	var g memoryGate
 	e = json.Unmarshal([]byte(strings.TrimSpace(r.OutputText())), &g)
 	return g, e
@@ -213,6 +377,25 @@ func (h *AIHandler) retrieveMemories(ctx context.Context, m *discordgo.MessageCr
 	}
 	if !shouldRetrieveMemory(q, c.LocalGateEnabled, c.LocalGateMinQueryTokens) {
 		return nil, nil, nil
+	}
+	if !c.EnableEmbeddings {
+		pool := c.CandidatePoolSize
+		if pool <= 0 {
+			pool = 50
+		}
+		memories, err := h.memoryRepo.SearchMemoriesByKeyword(m.Author.ID, q, pool, c.MinConfidence)
+		if err != nil {
+			return nil, nil, err
+		}
+		selfLimit := c.SelfMaxInjected
+		if selfLimit <= 0 {
+			selfLimit = 10
+		}
+		self, err := h.memoryRepo.SearchSelfMemoriesByKeyword(q, selfLimit)
+		if err != nil {
+			return memories, nil, err
+		}
+		return deduplicateMemories(memories, 0), deduplicateSelfMemories(self, 0), nil
 	}
 	v, e := h.embed(ctx, q)
 	if e != nil {
@@ -270,6 +453,7 @@ func (h *AIHandler) retrieveMemories(ctx context.Context, m *discordgo.MessageCr
 	for _, x := range scoredMem {
 		out = append(out, x.m)
 	}
+	out = deduplicateMemories(out, c.DedupSimilarity)
 	selfLimit := c.SelfMaxInjected
 	if selfLimit <= 0 {
 		selfLimit = 10
@@ -278,10 +462,15 @@ func (h *AIHandler) retrieveMemories(ctx context.Context, m *discordgo.MessageCr
 	if err != nil {
 		return out, nil, err
 	}
-	return out, self, nil
+	return out, deduplicateSelfMemories(self, c.DedupSimilarity), nil
 }
 
-func formatMemories(mem []repository.Memory, max int) string {
+func formatMemories(mem []repository.Memory, max int, threshold ...float64) string {
+	dedupThreshold := 0.92
+	if len(threshold) > 0 && threshold[0] > 0 {
+		dedupThreshold = threshold[0]
+	}
+	mem = deduplicateMemories(mem, dedupThreshold)
 	var b strings.Builder
 	for _, m := range mem {
 		line := "- " + m.Content
@@ -294,7 +483,12 @@ func formatMemories(mem []repository.Memory, max int) string {
 	return formatted
 }
 
-func formatSelfMemories(mem []repository.SelfMemory, max int) string {
+func formatSelfMemories(mem []repository.SelfMemory, max int, threshold ...float64) string {
+	dedupThreshold := 0.92
+	if len(threshold) > 0 && threshold[0] > 0 {
+		dedupThreshold = threshold[0]
+	}
+	mem = deduplicateSelfMemories(mem, dedupThreshold)
 	var b strings.Builder
 	for _, m := range mem {
 		line := "- " + m.Content
@@ -325,6 +519,7 @@ func (h *AIHandler) extractMemories(ctx context.Context, m *discordgo.MessageCre
 		fmt.Printf("memory extraction failed user_id=%s error=%v\n", m.Author.ID, e)
 		return
 	}
+	logResponseUsage("memory_extraction", r)
 	var out memoryExtraction
 	if json.Unmarshal([]byte(strings.TrimSpace(r.OutputText())), &out) != nil {
 		fmt.Printf("memory extraction invalid_json user_id=%s\n", m.Author.ID)
@@ -338,10 +533,16 @@ func (h *AIHandler) extractMemories(ctx context.Context, m *discordgo.MessageCre
 		if strings.TrimSpace(x.Content) == "" || x.Confidence < c.MinConfidence {
 			continue
 		}
-		v, e := h.embed(ctx, x.Content)
-		if e != nil {
-			fmt.Printf("memory embedding failed user_id=%s category=%s error=%v\n", m.Author.ID, x.Category, e)
+		if exists, err := h.memoryRepo.HasMemoryContent(m.Author.ID, x.Content); err == nil && exists {
 			continue
+		}
+		var v []float64
+		if c.EnableEmbeddings {
+			v, e = h.embed(ctx, x.Content)
+			if e != nil {
+				fmt.Printf("memory embedding failed user_id=%s category=%s error=%v\n", m.Author.ID, x.Category, e)
+				continue
+			}
 		}
 		if e = h.memoryRepo.CreateMemory(m.Author.ID, x.Content, x.Category, x.Confidence, x.Importance, v, m.ID, m.GuildID, m.ChannelID); e != nil {
 			fmt.Printf("memory write failed user_id=%s category=%s error=%v\n", m.Author.ID, x.Category, e)
